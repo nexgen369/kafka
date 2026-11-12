@@ -2145,6 +2145,13 @@ CONCLUSION:
 *Consumers: Applications that subscribe to topics and process the data
 *Consumer Groups: Groups of consumers that share the load of reading from topics.
 
+What is ZooKeeper:
+------------------
+Manages and coordinates kafka brokers
+Handles configuration,
+synchronization and leader election
+
+
 
 
 
