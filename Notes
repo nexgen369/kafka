@@ -1,0 +1,726 @@
+PART A – APACHE KAFKA
+
+DAY 1: Kafka Fundamentals and Architecture
+
+Main Topic: Kafka Fundamentals and Architecture
+
+Hands-on: Run Kafka using Docker, create topics, publish messages, and consume messages.
+
+--------------------------------------------------
+
+1. LEARNING OUTCOMES
+
+By the end of Day 1, students should be able to:
+
+- Understand Kafka architecture.
+- Distinguish between Kafka brokers and topics.
+- Understand partitions, offsets, and replicas.
+- Understand Kafka consumer groups.
+- Understand Kafka KRaft controllers.
+- Install and run Kafka using Docker.
+- Create and describe Kafka topics.
+- Publish messages using Kafka producers.
+- Consume messages using Kafka consumers.
+- Inspect Kafka consumer groups.
+
+--------------------------------------------------
+
+2. WHAT IS APACHE KAFKA?
+
+Apache Kafka is an open-source, distributed event streaming platform used to publish, store, process, and consume real-time events.
+
+Understanding the terminology:
+
+Term: Apache
+Meaning: Open-source software developed under the Apache Software Foundation.
+Example: Apache Kafka, Apache Spark.
+
+Term: Distributed
+Meaning: Runs across multiple machines to share workloads and provide fault tolerance.
+Example: Multiple Kafka brokers.
+
+Term: Event
+Meaning: A record representing something that happened.
+Example: Order placed, payment completed.
+
+Term: Streaming
+Meaning: Events are continuously produced and processed.
+Example: Live financial transactions.
+
+Term: Platform
+Meaning: Provides infrastructure and APIs for applications.
+Example: Kafka brokers and clients.
+
+Note:
+
+Kafka is not a traditional relational database.
+
+It is an event streaming platform that stores and distributes records between applications and systems.
+
+Example of an Event:
+
+JSON:
+
+{
+  "event_type": "ORDER_CREATED",
+  "order_id": 1001,
+  "customer_id": "S101",
+  "product": "Laptop",
+  "amount": 55000,
+  "status": "PLACED"
+}
+
+Note: Kafka treats this JSON as message data. Applications commonly serialize JSON into Kafka record values.
+
+--------------------------------------------------
+
+3. WHY DO WE NEED APACHE KAFKA?
+
+3.1 Traditional Synchronous Communication
+
+                  Order Service
+                       |
+          ---------------------------
+          |            |            |
+       Payment      Inventory   Notification
+         API           API          API
+
+In traditional synchronous communication:
+
+1. Order Service calls Payment API.
+2. Order Service calls Inventory API.
+3. Order Service calls Notification API.
+4. It may need to wait for responses from these services.
+
+Potential Problems:
+
+- High coupling between applications.
+- If one service fails, it may affect the overall transaction flow.
+- Complicated retry mechanisms.
+- Increased response time.
+- Difficult to scale individual services independently.
+- Temporary service failures can interrupt communication.
+
+3.2 Event-Driven Communication Using Kafka
+
+                 Order Service
+                   (Producer)
+                       |
+                       |
+                 Kafka Broker
+                       |
+                 Topic: orders
+                       |
+          ---------------------------
+          |            |            |
+       Payment      Inventory   Notification
+       Consumer      Consumer     Consumer
+
+Here, the Order Service publishes an event to the Kafka topic named orders.
+
+Each downstream application consumes the event independently using its own consumer group.
+
+Examples:
+
+- Payment Service processes payment events.
+- Inventory Service updates stock.
+- Notification Service sends order confirmation.
+
+Benefits of Kafka:
+
+1. Decoupling: Producers and consumers operate independently.
+2. Scalability: Producers and consumers can scale independently.
+3. Durability: Kafka stores events according to configured retention policies.
+4. Replay: Consumers can read previously stored events again when available.
+5. High Throughput: Kafka can handle large volumes of events.
+6. Fault Tolerance: Replication helps protect data against broker failures.
+
+Important:
+
+Kafka does not automatically guarantee successful business processing.
+
+Applications still need appropriate:
+
+- Retry mechanisms.
+- Idempotency.
+- Offset management.
+- Error handling.
+- Dead-letter handling.
+
+--------------------------------------------------
+
+4. KAFKA USE CASES
+
+Industry: Banking
+Application: Transaction processing
+Example Event: PAYMENT_COMPLETED
+
+Industry: E-commerce
+Application: Order processing
+Example Event: ORDER_CREATED
+
+Industry: Healthcare
+Application: Appointment scheduling
+Example Event: APPOINTMENT_BOOKED
+
+Industry: Logistics
+Application: Shipment tracking
+Example Event: PACKAGE_DISPATCHED
+
+Industry: Telecommunications
+Application: Network monitoring
+Example Event: NETWORK_FAILURE
+
+Industry: DevOps/SRE
+Application: Centralized telemetry pipelines
+Example Event: SERVICE_ERROR
+
+Kafka in DevOps:
+
+In DevOps environments, Kafka is commonly used between applications, data platforms, and observability pipelines.
+
+Examples:
+
+- Collecting application events.
+- Distributing infrastructure events.
+- Processing application logs.
+- Streaming monitoring events.
+- Building real-time data pipelines.
+
+Note:
+
+Kafka is not a replacement for Prometheus, Grafana, or log-analysis platforms. It can act as an event transport and buffering layer between systems.
+
+--------------------------------------------------
+
+5. KAFKA ARCHITECTURE
+
+Kafka architecture consists of several important components.
+
+Component 1: Producer
+
+A producer is an application that publishes records to a Kafka topic.
+
+Examples:
+
+- Java applications.
+- Python applications.
+- Payment services.
+- E-commerce applications.
+- IoT devices.
+
+Example:
+
+An Order Service publishes an ORDER_CREATED event to the orders topic.
+
+Component 2: Broker
+
+A broker is a Kafka server responsible for storing and serving topic-partition data.
+
+In production environments, a Kafka cluster commonly contains multiple brokers.
+
+Example:
+
+Kafka Cluster
+    |
+    |--- Broker 1
+    |
+    |--- Broker 2
+    |
+    |--- Broker 3
+
+Multiple brokers provide distributed storage and support partition replication.
+
+Component 3: Topic
+
+A topic is a named stream of related records.
+
+Examples:
+
+- orders
+- payments
+- student-events
+- application-logs
+
+A topic acts as a logical communication channel between producers and consumers.
+
+Component 4: Partition
+
+A partition is an ordered, append-only log of records.
+
+A Kafka topic can contain multiple partitions.
+
+Example:
+
+Topic: orders
+
+Partition 0:
+Record 1 (Offset 0)
+Record 2 (Offset 1)
+Record 3 (Offset 2)
+
+Partition 1:
+Record 1 (Offset 0)
+Record 2 (Offset 1)
+Record 3 (Offset 2)
+
+Partition 2:
+Record 1 (Offset 0)
+Record 2 (Offset 1)
+Record 3 (Offset 2)
+
+Important:
+
+- Each partition maintains its own offsets.
+- Ordering is guaranteed within a partition, not across all partitions.
+- Multiple partitions allow parallel consumption.
+- Records with the same key are generally routed to the same partition using the default key-based partitioning strategy.
+
+Component 5: Offset
+
+An offset is the position of a record within a particular partition.
+
+Example:
+
+Partition 0:
+
+Offset 0 --> Order 1001
+Offset 1 --> Order 1002
+Offset 2 --> Order 1003
+Offset 3 --> Order 1004
+
+Important:
+
+An offset is not a globally unique message ID.
+
+The combination of topic, partition, and offset identifies a specific record within a Kafka log.
+
+Component 6: Replica
+
+A replica is a copy of a topic partition.
+
+For example, with a replication factor of 3, Kafka maintains three replicas of each partition.
+
+These replicas are normally distributed across different brokers.
+
+Leader Replica:
+
+- Handles normal read and write requests.
+- Coordinates replication with follower replicas.
+
+Follower Replicas:
+
+- Replicate data from the leader.
+- Can become leaders if the current leader fails, subject to Kafka's replica election rules.
+
+Example:
+
+Topic: orders
+Replication Factor: 3
+
+Broker 1          Broker 2          Broker 3
+---------         ---------         ---------
+Leader            Follower          Follower
+Partition 0       Partition 0       Partition 0
+
+Note:
+
+A replication factor of 3 requires at least three brokers for replicas to be placed on separate brokers.
+
+Component 7: Consumer
+
+A consumer is an application that reads records from Kafka topics.
+
+Examples:
+
+- Payment Service.
+- Inventory Service.
+- Notification Service.
+- Python consumer application.
+
+Consumers subscribe to one or more Kafka topics.
+
+Component 8: Consumer Group
+
+A consumer group is a collection of consumers that work together to consume records from one or more topics.
+
+Example:
+
+Topic: orders
+Partitions: 3
+
+Consumer Group: payment-group
+
+Consumer 1 --> Partition 0
+Consumer 2 --> Partition 1
+Consumer 3 --> Partition 2
+
+Important:
+
+- Each partition is assigned to at most one consumer within a consumer group at a time.
+- Multiple consumer groups can independently consume the same topic.
+- Consumer groups provide scalability and parallel processing.
+- If there are more consumers than partitions, some consumers will remain idle.
+
+Example:
+
+                  Kafka Topic: orders
+                           |
+               -----------------------
+               |                     |
+         payment-group          inventory-group
+               |                     |
+         Payment Service       Inventory Service
+
+Both groups can independently process the same events.
+
+Component 9: KRaft Controller
+
+KRaft stands for Kafka Raft.
+
+It is Kafka's metadata management and controller mechanism based on the Raft consensus protocol.
+
+The KRaft controller manages cluster metadata and coordinates important cluster operations.
+
+Responsibilities:
+
+- Managing broker registration.
+- Managing topic metadata.
+- Managing partition assignments.
+- Managing partition leader elections.
+- Maintaining cluster metadata.
+
+Important:
+
+Modern Kafka versions support KRaft mode without requiring Apache ZooKeeper.
+
+Kafka 4.x uses KRaft and does not support ZooKeeper mode.
+
+--------------------------------------------------
+
+6. KAFKA VS TRADITIONAL MESSAGING QUEUE VS REST API
+
+Capability: Primary Interaction
+
+Kafka: Event streaming
+Traditional Queue: Message delivery
+REST API: Request-response
+
+Capability: Communication
+
+Kafka: Asynchronous
+Traditional Queue: Usually asynchronous
+REST API: Usually synchronous
+
+Capability: Data Storage
+
+Kafka: Retained event log
+Traditional Queue: Queue-based storage
+REST API: No built-in message retention
+
+Capability: Message Replay
+
+Kafka: Supported through retained records and offsets
+Traditional Queue: Depends on the system
+REST API: Not built in
+
+Capability: Consumer Model
+
+Kafka: Consumer groups
+Traditional Queue: Queue consumers
+REST API: API clients
+
+Capability: Scalability
+
+Kafka: Distributed partitions
+Traditional Queue: Depends on the broker
+REST API: Depends on application architecture
+
+Capability: Ordering
+
+Kafka: Within a partition
+Traditional Queue: Depends on queue configuration
+REST API: Depends on application
+
+Main Use Case:
+
+Kafka:
+High-throughput event streaming.
+
+Traditional Queue:
+Background task processing and message delivery.
+
+REST API:
+Application-to-application request-response communication.
+
+When should we use Kafka?
+
+Use Kafka when applications need:
+
+- High-volume event streaming.
+- Real-time data processing.
+- Multiple independent consumers.
+- Event replay.
+- Distributed event-driven architecture.
+
+When should we use REST APIs?
+
+Use REST APIs when applications need:
+
+- Immediate request-response communication.
+- CRUD operations.
+- Fetching application data.
+- Synchronous service integration.
+
+When should we use traditional queues?
+
+Use traditional queues when applications need:
+
+- Background job processing.
+- Task distribution.
+- Work queues.
+- Message acknowledgement and delivery workflows.
+
+--------------------------------------------------
+
+7. HANDS-ON LAB: RUN KAFKA USING DOCKER
+
+Objective:
+
+Run Apache Kafka locally using Docker and understand basic Kafka operations.
+
+Step 1: Install Docker
+
+Install Docker Engine on Ubuntu using the official Docker repository.
+
+Documentation:
+https://docs.docker.com/engine/install/ubuntu/
+
+Verify installation:
+
+docker --version
+
+docker compose version
+
+Step 2: Start Kafka Container
+
+sudo docker run -d 
+--name kafka-day1 
+--restart unless-stopped 
+-p 127.0.0.1:9092:9092 
+apache/kafka:4.4.0
+
+Step 3: Verify Kafka Container
+
+sudo docker ps
+
+Check Kafka logs:
+
+sudo docker logs kafka-day1
+
+Step 4: List Existing Topics
+
+sudo docker exec kafka-day1 
+/opt/kafka/bin/kafka-topics.sh 
+--bootstrap-server localhost:9092 
+--list
+
+Step 5: Create a Kafka Topic
+
+sudo docker exec kafka-day1 
+/opt/kafka/bin/kafka-topics.sh 
+--bootstrap-server localhost:9092 
+--create 
+--topic day1-topic
+
+Step 6: Describe the Topic
+
+sudo docker exec kafka-day1 
+/opt/kafka/bin/kafka-topics.sh 
+--bootstrap-server localhost:9092 
+--describe 
+--topic day1-topic
+
+Step 7: Publish Messages Using Producer
+
+sudo docker exec -it kafka-day1 
+/opt/kafka/bin/kafka-console-producer.sh 
+--bootstrap-server localhost:9092 
+--topic day1-topic
+
+Enter sample messages:
+
+Hello Kafka
+Learning Apache Kafka
+This is my Day 1 Kafka practice
+
+Press Ctrl+C to exit.
+
+Step 8: Consume Messages
+
+sudo docker exec -it kafka-day1 
+/opt/kafka/bin/kafka-console-consumer.sh 
+--bootstrap-server localhost:9092 
+--topic day1-topic 
+--from-beginning
+
+Expected output:
+
+Hello Kafka
+Learning Apache Kafka
+This is my Day 1 Kafka practice
+
+Step 9: Inspect Consumer Groups
+
+List consumer groups:
+
+sudo docker exec kafka-day1 
+/opt/kafka/bin/kafka-consumer-groups.sh 
+--bootstrap-server localhost:9092 
+--list
+
+Note:
+
+A consumer group is generally created when a consumer joins with a configured group ID.
+
+To create a consumer with a group ID:
+
+sudo docker exec -it kafka-day1 
+/opt/kafka/bin/kafka-console-consumer.sh 
+--bootstrap-server localhost:9092 
+--topic day1-topic 
+--group day1-group
+
+In another terminal, inspect the group:
+
+sudo docker exec kafka-day1 
+/opt/kafka/bin/kafka-consumer-groups.sh 
+--bootstrap-server localhost:9092 
+--describe 
+--group day1-group
+
+Step 10: Delete the Kafka Topic (Optional)
+
+sudo docker exec kafka-day1 
+/opt/kafka/bin/kafka-topics.sh 
+--bootstrap-server localhost:9092 
+--delete 
+--topic day1-topic
+
+--------------------------------------------------
+
+8. AWS SNS VS APACHE KAFKA
+
+Capability: Service Type
+
+Apache Kafka:
+Distributed event streaming platform.
+
+AWS SNS:
+Fully managed pub/sub messaging service.
+
+Capability: Infrastructure
+
+Apache Kafka:
+Self-managed or managed through services such as Amazon MSK.
+
+AWS SNS:
+Managed by AWS.
+
+Capability: Message Retention
+
+Apache Kafka:
+Configurable topic retention.
+
+AWS SNS:
+Not designed as a long-term event log.
+
+Capability: Message Replay
+
+Apache Kafka:
+Supported through retained records and offsets.
+
+AWS SNS:
+Not a general-purpose replayable event log.
+
+Capability: Consumers
+
+Apache Kafka:
+Kafka consumers and consumer groups.
+
+AWS SNS:
+Subscribers such as SQS, Lambda, and HTTP/S endpoints.
+
+Capability: Main Use Case
+
+Apache Kafka:
+High-throughput event streaming.
+
+AWS SNS:
+Application notifications and message fan-out.
+
+Example:
+
+Kafka:
+Stream millions of order events and allow multiple consumer applications to process them independently.
+
+AWS SNS:
+Send an order notification to multiple subscribers, such as SQS queues, Lambda functions, and HTTP/S endpoints.
+
+Note:
+
+SNS and Kafka solve related but different messaging requirements. They are not direct replacements for each other.
+
+--------------------------------------------------
+
+9. DAY 1 REVISION QUESTIONS
+
+1. What is Apache Kafka?
+2. Why do we need Kafka?
+3. What is the difference between synchronous and asynchronous communication?
+4. What is a Kafka broker?
+5. What is a Kafka topic?
+6. What is a Kafka partition?
+7. What is an offset?
+8. What is replication factor?
+9. What is the difference between leader and follower replicas?
+10. What is a Kafka producer?
+11. What is a Kafka consumer?
+12. What is a consumer group?
+13. Can multiple consumer groups consume the same topic?
+14. What is KRaft?
+15. What is the difference between Kafka and AWS SNS?
+16. What is the difference between Kafka and REST APIs?
+
+--------------------------------------------------
+
+10. DAY 1 PRACTICAL ASSIGNMENT
+
+Complete the following tasks independently:
+
+[ ] Run Kafka using Docker.
+[ ] Verify the Kafka container.
+[ ] Create a topic named student-events.
+[ ] Describe the topic.
+[ ] Create another topic named application-logs.
+[ ] Publish at least five messages to student-events.
+[ ] Consume all messages using --from-beginning.
+[ ] Create a consumer group named student-group.
+[ ] Inspect consumer group details.
+[ ] Explain the difference between Kafka topics, partitions, and offsets.
+
+Expected Deliverables:
+
+1. Docker container running screenshot.
+2. Kafka topic creation screenshot.
+3. Producer and consumer output screenshot.
+4. Consumer group description screenshot.
+5. Short explanation of Kafka architecture.
+
+--------------------------------------------------
+
+END OF DAY 1 – KAFKA FUNDAMENTALS AND ARCHITECTURE
+
+Next Topic:
+
+Kafka Advanced Concepts – Partitions, Replication, Producer Acknowledgements, Consumer Offsets, and Fault Tolerance.
