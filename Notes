@@ -892,7 +892,7 @@ Expected Terminal Prompt:
 ubuntu@ip-172-31-xx-xx:~$
 ```
 
-Explain to Students:
+EC2 Explanation:
 
 EC2 provides the virtual machine.
 
@@ -1882,10 +1882,6 @@ PART F – TRAINER TEACHING SCRIPT
 
 21. TRAINER SCRIPT
 
-Opening: First 5 Minutes
-
-Good morning, everyone.
-
 Welcome to Apache Kafka Intermediate Training.
 
 Over the next nine days, we will understand Kafka architecture, producers, consumers, partitions, offsets, stream processing, Kafka Connect, security, and monitoring.
@@ -2135,7 +2131,7 @@ Readiness: 0/8
 
 END OF PART B – AWS EC2 UBUNTU HANDS-ON LABS
 
-DAY 1 COMPLETED
+DAY 1 & 2 COMPLETED
 
 Next Topic:
 
