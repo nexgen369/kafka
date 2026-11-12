@@ -724,3 +724,1419 @@ END OF DAY 1 – KAFKA FUNDAMENTALS AND ARCHITECTURE
 Next Topic:
 
 Kafka Advanced Concepts – Partitions, Replication, Producer Acknowledgements, Consumer Offsets, and Fault Tolerance.
+
+PART B – AWS EC2 UBUNTU HANDS-ON LABS
+
+DAY 1: Deploy Apache Kafka on AWS EC2 Using Docker
+
+Main Topic: AWS EC2, Ubuntu, Docker Engine, and Apache Kafka Deployment
+
+Hands-on:
+Launch an Ubuntu EC2 instance, install Docker, deploy Apache Kafka 4.4.0, create topics, publish messages, consume messages, and inspect consumer groups.
+
+--------------------------------------------------
+
+7. LAB ENVIRONMENT ARCHITECTURE
+
+We will deploy Kafka on one Ubuntu EC2 instance using Docker.
+
+Architecture:
+
+Trainer's Laptop
+       |
+       |
+SSH Client / Terminal
+       |
+       |
+SSH Port 22
+       |
+       |
+AWS Cloud
+       |
+       |
+Amazon EC2
+       |
+       |
+Ubuntu Server 24.04 LTS
+       |
+       |
+Docker Engine
+       |
+       |
+Apache Kafka 4.4.0
+       |
+       |
+Single-node KRaft Broker + Controller
+       |
+       |
+Port 9092 – Local Access Only
+
+Kafka CLI producer and consumer commands run inside the Docker container.
+
+AWS Infrastructure Requirements:
+
+Cloud: AWS
+
+Service: Amazon EC2
+
+Operating System: Ubuntu Server 24.04 LTS
+
+Instance Type: t3.medium or larger
+
+CPU: 2 vCPU
+
+RAM: 4 GiB
+
+Storage: 20 GiB gp3 EBS
+
+Security Group:
+- SSH port 22 from trainer's public IP only.
+- No inbound Kafka port 9092.
+
+Kafka Version: Apache Kafka 4.4.0
+
+Container Runtime: Docker Engine
+
+Region: Any suitable AWS Region.
+
+Note:
+
+For a smoother training session with additional applications, an 8 GiB instance such as t3.large is preferable, although it costs more.
+
+Security:
+
+Do not open TCP port 9092 to 0.0.0.0/0.
+
+All Kafka commands in this handbook execute inside the Docker container, so public Kafka access is unnecessary.
+
+Kafka's default development configuration is not appropriate for an Internet-exposed broker.
+
+--------------------------------------------------
+
+8. LAB 1 – LAUNCH AWS EC2
+
+Estimated Time: 10 Minutes
+
+Step 1: Open AWS Console
+
+Visit the AWS Management Console:
+
+https://console.aws.amazon.com/
+
+Navigate to:
+
+AWS Console → EC2 → Instances → Launch Instance
+
+Step 2: Configure the EC2 Instance
+
+Use the following configuration:
+
+Name: kafka-day1-training
+
+AMI: Ubuntu Server 24.04 LTS
+
+Architecture: x86_64
+
+Instance Type: t3.medium
+
+Key Pair: kafka-training-key
+
+Storage: 20 GiB gp3
+
+Public IP: Enabled
+
+Select an appropriate VPC and public subnet with Internet connectivity.
+
+Step 3: Configure Security Group
+
+Create or select a security group with the following inbound rule:
+
+Type: SSH
+
+Protocol: TCP
+
+Port: 22
+
+Source: My IP /32
+
+Keep outbound access available for package installation and pulling Docker images.
+
+Important:
+
+Do not add inbound port 9092.
+
+Step 4: Launch and Connect to EC2
+
+Once the instance is running, copy its Public IPv4 Address or Public DNS.
+
+From your local terminal, use the private key to connect.
+
+Set private key permissions:
+
+```bash
+chmod 400 kafka-training-key.pem
+```
+
+Connect to EC2:
+
+```bash
+ssh -i kafka-training-key.pem \
+ubuntu@YOUR_EC2_PUBLIC_IP
+```
+
+Replace YOUR_EC2_PUBLIC_IP with your actual EC2 public IP address.
+
+Expected Terminal Prompt:
+
+```text
+ubuntu@ip-172-31-xx-xx:~$
+```
+
+Explain to Students:
+
+EC2 provides the virtual machine.
+
+Ubuntu is the operating system.
+
+Docker runs Kafka inside a container.
+
+Kafka is the event-streaming service.
+
+SSH provides administrative access.
+
+--------------------------------------------------
+
+9. LAB 2 – PREPARE UBUNTU SERVER
+
+Run all the following commands on the EC2 instance.
+
+Step 1: Check Operating System Details
+
+```bash
+cat /etc/os-release
+```
+
+Expected relevant output:
+
+```text
+PRETTY_NAME="Ubuntu 24.04.x LTS"
+```
+
+Step 2: Check CPU and Memory
+
+Check available CPU cores:
+
+```bash
+nproc
+```
+
+Check memory:
+
+```bash
+free -h
+```
+
+Check disk space:
+
+```bash
+df -h /
+```
+
+Explain:
+
+nproc shows available logical CPUs.
+
+free -h shows available memory.
+
+df -h / shows filesystem storage space.
+
+Step 3: Update Package Metadata and Installed Packages
+
+```bash
+sudo apt-get update
+```
+
+Upgrade installed packages:
+
+```bash
+sudo apt-get upgrade -y
+```
+
+Step 4: Install Required Utilities
+
+```bash
+sudo apt-get install -y \
+ca-certificates \
+curl \
+gnupg \
+git \
+jq
+```
+
+Note:
+
+jq is useful for working with JSON during later exercises.
+
+--------------------------------------------------
+
+10. LAB 3 – INSTALL DOCKER ENGINE
+
+These steps follow Docker's official Ubuntu installation approach.
+
+Official Documentation:
+
+https://docs.docker.com/engine/install/ubuntu/
+
+Step 1: Create the Keyring Directory
+
+```bash
+sudo install -m 0755 -d /etc/apt/keyrings
+```
+
+Step 2: Add Docker's Official Signing Key
+
+```bash
+sudo curl -fsSL \
+https://download.docker.com/linux/ubuntu/gpg \
+-o /etc/apt/keyrings/docker.asc
+
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+```
+
+Step 3: Add the Docker APT Repository
+
+Copy the entire block:
+
+```bash
+sudo tee /etc/apt/sources.list.d/docker.sources > /dev/null <<EOF
+Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
+Components: stable
+Architectures: $(dpkg --print-architecture)
+Signed-By: /etc/apt/keyrings/docker.asc
+EOF
+```
+
+Step 4: Install Docker
+
+```bash
+sudo apt-get update
+
+sudo apt-get install -y \
+docker-ce \
+docker-ce-cli \
+containerd.io \
+docker-buildx-plugin \
+docker-compose-plugin
+```
+
+Step 5: Start and Enable Docker
+
+```bash
+sudo systemctl enable --now docker
+```
+
+Step 6: Verify Docker Installation
+
+Check Docker version:
+
+```bash
+sudo docker --version
+```
+
+Check Docker service:
+
+```bash
+sudo systemctl is-active docker
+```
+
+Expected Output:
+
+```text
+Docker version ...
+active
+```
+
+The version number depends on the installed Docker release.
+
+Step 7: Run a Test Container
+
+```bash
+sudo docker run --rm hello-world
+```
+
+Expected Output Includes:
+
+```text
+Hello from Docker!
+
+This message shows that your installation appears to be working correctly.
+```
+
+If this message appears, Docker installation is working.
+
+Note:
+
+For this course, we will continue using sudo docker so that no Docker user-group changes are required.
+
+--------------------------------------------------
+
+11. LAB 4 – DOWNLOAD AND START KAFKA
+
+Estimated Time: 10–15 Minutes
+
+We will use the official JVM-based Apache Kafka Docker image, version 4.4.0.
+
+Step 1: Pull Kafka Docker Image
+
+```bash
+sudo docker pull apache/kafka:4.4.0
+```
+
+Expected final output resembles:
+
+```text
+Status: Downloaded newer image for apache/kafka:4.4.0
+```
+
+If the image is already cached, Docker may report that it is up to date.
+
+Step 2: Run Kafka Container
+
+```bash
+sudo docker run -d \
+--name kafka-day1 \
+--restart unless-stopped \
+-p 127.0.0.1:9092:9092 \
+apache/kafka:4.4.0
+```
+
+Command Explanation:
+
+run: Creates and starts a container.
+
+-d: Runs the container in detached mode.
+
+--name: Gives the container a name.
+
+--restart unless-stopped: Restarts the container after Docker daemon or host restarts unless explicitly stopped.
+
+-p 127.0.0.1:9092:9092: Publishes port 9092 only on the EC2 loopback interface.
+
+apache/kafka:4.4.0: Kafka container image.
+
+Important:
+
+The default image starts a development Kafka server with a KRaft configuration.
+
+No separate ZooKeeper container is required.
+
+Step 3: Check Container Status
+
+```bash
+sudo docker ps
+```
+
+Expected relevant output:
+
+```text
+IMAGE                NAMES
+apache/kafka:4.4.0   kafka-day1
+```
+
+The container should show an Up status.
+
+Step 4: View Kafka Logs
+
+```bash
+sudo docker logs --tail 50 kafka-day1
+```
+
+Look for startup completion and the absence of fatal errors.
+
+Kafka may need some time to initialize.
+
+Step 5: Verify Kafka CLI
+
+```bash
+sudo docker exec kafka-day1 \
+/opt/kafka/bin/kafka-topics.sh \
+--bootstrap-server localhost:9092 \
+--list
+```
+
+If the command succeeds without a connection error, the broker is responding.
+
+An empty topic list is normal before creating topics.
+
+Checkpoint 1: Kafka Is Operational
+
+Students should demonstrate:
+
+1. Running Docker container.
+2. Successful Kafka topic-list command.
+3. Kafka startup logs without fatal errors.
+
+--------------------------------------------------
+
+12. LAB 5 – CREATE A KAFKA TOPIC
+
+Step 1: Create a Topic
+
+Create a topic named student-events with three partitions.
+
+```bash
+sudo docker exec kafka-day1 \
+/opt/kafka/bin/kafka-topics.sh \
+--bootstrap-server localhost:9092 \
+--create \
+--topic student-events \
+--partitions 3 \
+--replication-factor 1
+```
+
+Expected Output:
+
+```text
+Created topic student-events.
+```
+
+Step 2: List Topics
+
+```bash
+sudo docker exec kafka-day1 \
+/opt/kafka/bin/kafka-topics.sh \
+--bootstrap-server localhost:9092 \
+--list
+```
+
+Expected Output:
+
+```text
+student-events
+```
+
+Other internal topics may appear later.
+
+Step 3: Describe the Topic
+
+```bash
+sudo docker exec kafka-day1 \
+/opt/kafka/bin/kafka-topics.sh \
+--bootstrap-server localhost:9092 \
+--describe \
+--topic student-events
+```
+
+Illustrative Output:
+
+```text
+Topic: student-events
+PartitionCount: 3
+ReplicationFactor: 1
+
+Partition: 0  Leader: 1  Replicas: 1  Isr: 1
+Partition: 1  Leader: 1  Replicas: 1  Isr: 1
+Partition: 2  Leader: 1  Replicas: 1  Isr: 1
+```
+
+The actual broker ID and formatting may differ.
+
+Trainer Explanation:
+
+Question 1: Why are all three partitions on the same broker?
+
+Answer:
+
+Because we have only one broker. Multiple partitions do not automatically mean multiple physical servers.
+
+Question 2: Why is the replication factor 1?
+
+Answer:
+
+Because only one broker is available.
+
+Replication factor 3 would require at least three brokers.
+
+--------------------------------------------------
+
+13. LAB 6 – SEND MESSAGES USING A KAFKA PRODUCER
+
+Open a new SSH terminal to the same EC2 instance.
+
+Step 1: Start the Kafka Console Producer
+
+```bash
+sudo docker exec -it kafka-day1 \
+/opt/kafka/bin/kafka-console-producer.sh \
+--bootstrap-server localhost:9092 \
+--topic student-events
+```
+
+You should see an interactive prompt:
+
+```text
+>
+```
+
+Step 2: Enter Sample Messages
+
+Enter the following messages, pressing Enter after each line.
+
+```json
+{"student_id":101,"name":"Rahul","course":"Kafka"}
+{"student_id":102,"name":"Priya","course":"AWS"}
+{"student_id":103,"name":"Arun","course":"DevOps"}
+{"student_id":104,"name":"Meena","course":"Python"}
+```
+
+Explain What Happened:
+
+1. The producer connects to the Kafka broker.
+2. It discovers topic and partition metadata.
+3. It sends records to the topic partitions.
+4. Kafka appends accepted records to the partition logs.
+5. The producer receives acknowledgments according to its configuration.
+
+Important:
+
+The console producer sends each entered line as a separate record.
+
+Kafka does not automatically validate that the line is valid JSON.
+
+--------------------------------------------------
+
+14. LAB 7 – READ MESSAGES USING A KAFKA CONSUMER
+
+Keep the producer running.
+
+Open another SSH terminal and execute:
+
+Step 1: Start the Kafka Console Consumer
+
+```bash
+sudo docker exec -it kafka-day1 \
+/opt/kafka/bin/kafka-console-consumer.sh \
+--bootstrap-server localhost:9092 \
+--topic student-events \
+--from-beginning
+```
+
+Expected Output Contains the Four Student Records:
+
+```json
+{"student_id":101,"name":"Rahul","course":"Kafka"}
+{"student_id":102,"name":"Priya","course":"AWS"}
+{"student_id":103,"name":"Arun","course":"DevOps"}
+{"student_id":104,"name":"Meena","course":"Python"}
+```
+
+Note:
+
+The display order may differ because the topic has three partitions.
+
+Live Demonstration:
+
+Return to the producer terminal and enter:
+
+```json
+{"student_id":105,"name":"Vahid","course":"Kubernetes"}
+```
+
+Observe the consumer terminal.
+
+The new record should appear without restarting the consumer.
+
+Trainer Explanation:
+
+The producer and consumer are two independent clients.
+
+The producer publishes records, and Kafka stores them.
+
+The consumer reads records from Kafka.
+
+The producer does not need to know which consumer will process the record.
+
+Step 2: Demonstrate Message Replay
+
+Stop the consumer using Ctrl+C.
+
+Start a new consumer with a new group:
+
+```bash
+sudo docker exec -it kafka-day1 \
+/opt/kafka/bin/kafka-console-consumer.sh \
+--bootstrap-server localhost:9092 \
+--topic student-events \
+--group replay-demo \
+--from-beginning
+```
+
+The new group can read retained messages from the beginning.
+
+Explain:
+
+Replay is possible because Kafka retains records according to retention policies.
+
+Records are not normally deleted simply because a consumer reads them.
+
+--------------------------------------------------
+
+PART C – INTERMEDIATE CONCEPTS AND PRACTICAL EXERCISES
+
+15. LAB 8 – OBSERVE PARTITIONS AND OFFSETS
+
+For this lab, create a fresh single-partition topic to make ordering and offsets easy to understand.
+
+Step 1: Create a Topic
+
+```bash
+sudo docker exec kafka-day1 \
+/opt/kafka/bin/kafka-topics.sh \
+--bootstrap-server localhost:9092 \
+--create \
+--topic offset-demo \
+--partitions 1 \
+--replication-factor 1
+```
+
+Step 2: Produce Five Records
+
+```bash
+printf 'Message-A\nMessage-B\nMessage-C\nMessage-D\nMessage-E\n' | \
+sudo docker exec -i kafka-day1 \
+/opt/kafka/bin/kafka-console-producer.sh \
+--bootstrap-server localhost:9092 \
+--topic offset-demo
+```
+
+Step 3: Consume Messages With Offsets Displayed
+
+```bash
+sudo docker exec kafka-day1 \
+/opt/kafka/bin/kafka-console-consumer.sh \
+--bootstrap-server localhost:9092 \
+--topic offset-demo \
+--from-beginning \
+--property print.partition=true \
+--property print.offset=true \
+--timeout-ms 10000
+```
+
+Illustrative Output:
+
+```text
+Partition:0 Offset:0 Message-A
+Partition:0 Offset:1 Message-B
+Partition:0 Offset:2 Message-C
+Partition:0 Offset:3 Message-D
+Partition:0 Offset:4 Message-E
+```
+
+The exact output formatting depends on the Kafka console formatter.
+
+The consumer may print a timeout message after waiting for more records. That is expected for this finite demonstration.
+
+Key Concept:
+
+Single Partition Log
+
+Message-A --> Offset 0
+
+Message-B --> Offset 1
+
+Message-C --> Offset 2
+
+Message-D --> Offset 3
+
+Message-E --> Offset 4
+
+Records are appended in order.
+
+The next offset would ordinarily be 5, even though no record currently exists at that position.
+
+Trainer Question:
+
+Why do offsets start at zero in this new topic?
+
+Answer:
+
+A new, empty partition normally starts with offset zero.
+
+However, offsets in an existing log may not start at zero after retention or log truncation.
+
+--------------------------------------------------
+
+16. LAB 9 – CONSUMER GROUPS
+
+This is one of the most important Kafka concepts.
+
+Consumer Group Architecture:
+
+Topic: group-demo
+
+Partition 0
+Partition 1
+Partition 2
+
+Consumer Group: training-group
+
+Consumer 1
+Consumer 2
+Consumer 3
+
+Illustrative balanced assignment:
+
+Three consumers can each process one partition.
+
+Actual assignments depend on the group protocol and assignor.
+
+Step 1: Create a Topic for the Demonstration
+
+```bash
+sudo docker exec kafka-day1 \
+/opt/kafka/bin/kafka-topics.sh \
+--bootstrap-server localhost:9092 \
+--create \
+--topic group-demo \
+--partitions 3 \
+--replication-factor 1
+```
+
+Step 2: Start Consumer 1
+
+In SSH Terminal A:
+
+```bash
+sudo docker exec -it kafka-day1 \
+/opt/kafka/bin/kafka-console-consumer.sh \
+--bootstrap-server localhost:9092 \
+--topic group-demo \
+--group training-group
+```
+
+Step 3: Start Consumer 2
+
+In SSH Terminal B, run the same command:
+
+```bash
+sudo docker exec -it kafka-day1 \
+/opt/kafka/bin/kafka-console-consumer.sh \
+--bootstrap-server localhost:9092 \
+--topic group-demo \
+--group training-group
+```
+
+Step 4: Produce Records
+
+In SSH Terminal C:
+
+```bash
+sudo docker exec -it kafka-day1 \
+/opt/kafka/bin/kafka-console-producer.sh \
+--bootstrap-server localhost:9092 \
+--topic group-demo
+```
+
+Enter the following messages:
+
+```text
+Order-1001
+Order-1002
+Order-1003
+Order-1004
+Order-1005
+Order-1006
+Order-1007
+Order-1008
+Order-1009
+```
+
+Expected Behavior:
+
+The two consumers cooperate to process the topic's partitions.
+
+Do not expect every consumer to receive an equal number of messages.
+
+Distribution depends on partition assignment and which partitions receive records.
+
+Step 5: Describe the Consumer Group
+
+Open a fourth terminal:
+
+```bash
+sudo docker exec kafka-day1 \
+/opt/kafka/bin/kafka-consumer-groups.sh \
+--bootstrap-server localhost:9092 \
+--describe \
+--group training-group
+```
+
+Output Includes Fields Such As:
+
+```text
+GROUP           TOPIC        PARTITION CURRENT-OFFSET LOG-END-OFFSET LAG
+training-group  group-demo   0         ...            ...            ...
+training-group  group-demo   1         ...            ...            ...
+training-group  group-demo   2         ...            ...            ...
+```
+
+Explain These Terms:
+
+Group:
+
+Consumer group identifier.
+
+Topic:
+
+Topic being consumed.
+
+Partition:
+
+Partition number.
+
+Current Offset:
+
+Last committed consumer position, expressed as the next offset to consume.
+
+Log-End Offset:
+
+End position of the partition log.
+
+Lag:
+
+Difference between log-end offset and committed offset.
+
+Note:
+
+A consumer's committed offset may temporarily lag behind records already displayed because commits are not necessarily immediate.
+
+Step 6: Add a Third Consumer
+
+Open another SSH terminal and run the same group-consumer command.
+
+After group assignment stabilizes, the three consumers can each receive one partition.
+
+Step 7: Add a Fourth Consumer
+
+Run a fourth consumer in the same group.
+
+With three partitions and four consumers, at least one consumer will have no partition assignment for this topic.
+
+Teaching Conclusion:
+
+Adding consumers beyond the number of topic partitions does not increase the maximum parallelism for processing that topic within a single group.
+
+--------------------------------------------------
+
+PART D – KAFKA ARCHITECTURE: DEEPER EXPLANATION
+
+17. MESSAGE LIFECYCLE
+
+Explain this sequence before ending today's technical section.
+
+Step 1: Producer Creates an Event
+
+The application constructs a record with an optional key and value.
+
+Step 2: Producer Selects a Partition
+
+A partitioner uses the record key or configured partitioning behavior.
+
+Step 3: Broker Appends the Record
+
+The partition leader writes the record to its log.
+
+Step 4: Replication Occurs
+
+Follower replicas fetch data from the leader when replication is configured.
+
+Step 5: Producer Receives Acknowledgment
+
+The acknowledgment depends on settings such as acks and broker state.
+
+Step 6: Consumer Fetches the Record
+
+The consumer polls the broker for records assigned to it.
+
+Step 7: Consumer Processes the Event
+
+Application business logic executes.
+
+Step 8: Consumer Commits Its Position
+
+Offset commits track progress.
+
+The exact timing depends on the application's commit strategy.
+
+Important Clarification:
+
+Kafka message consumption is not the same as message deletion.
+
+Kafka generally retains records based on topic retention policies, irrespective of whether consumers have processed them.
+
+Also, Kafka cannot guarantee that a consumer's external side effect, such as writing to a database, succeeds simply because the record was fetched.
+
+--------------------------------------------------
+
+18. KAFKA TERMINOLOGY REVISION
+
+Producer: Message publisher.
+
+Consumer: Message reader.
+
+Broker: Kafka server.
+
+Cluster: Collection of Kafka servers.
+
+Topic: Named event stream.
+
+Partition: Ordered event log.
+
+Offset: Position in a partition.
+
+Replica: Copy of partition.
+
+Leader: Primary replica for reads and writes.
+
+ISR: In-Sync Replicas.
+
+Consumer Group: Cooperating consumers.
+
+KRaft: Kafka metadata consensus mechanism.
+
+Retention: How long or how much data Kafka keeps.
+
+Lag: Consumer committed-position delay.
+
+--------------------------------------------------
+
+PART E – TROUBLESHOOTING GUIDE FOR LIVE TRAINING
+
+19. COMMON KAFKA AND AWS EC2 ERRORS
+
+Problem: SSH connection timed out.
+
+Likely Cause:
+Security group, network configuration, or wrong public IP.
+
+Action:
+Check SSH inbound rule and EC2 network reachability.
+
+Problem: Permission denied (publickey).
+
+Likely Cause:
+Wrong private key or SSH username.
+
+Action:
+Use the correct PEM file and ubuntu username.
+
+Problem: docker: command not found.
+
+Likely Cause:
+Docker is not installed.
+
+Action:
+Complete Docker installation.
+
+Problem: Cannot connect to Docker daemon.
+
+Likely Cause:
+Docker service stopped or permission issue.
+
+Action:
+
+```bash
+sudo systemctl start docker
+```
+
+Problem: Docker image pull fails.
+
+Likely Cause:
+No Internet connectivity, DNS issue, or registry access problem.
+
+Action:
+Check routing, DNS, and outbound HTTPS connectivity.
+
+Problem: Kafka container exits.
+
+Likely Cause:
+Startup/configuration or resource problem.
+
+Action:
+
+```bash
+sudo docker logs kafka-day1
+```
+
+Problem: Topic already exists.
+
+Likely Cause:
+Topic was created previously.
+
+Action:
+Use a new topic name or reuse the existing topic.
+
+Problem: Replication factor larger than available brokers.
+
+Likely Cause:
+Too few brokers.
+
+Action:
+Use replication factor 1 for the single-broker lab.
+
+Problem: Broker connection fails.
+
+Likely Cause:
+Kafka is not ready or the wrong address is being used.
+
+Action:
+Check docker ps, container logs, and port configuration.
+
+Problem: Consumer shows no records.
+
+Likely Cause:
+Wrong topic, offset position, or group state.
+
+Action:
+Check the topic, producer, and consumer group offsets.
+
+Problem: Consumer lag is nonzero.
+
+Likely Cause:
+Consumer is behind or commits are delayed.
+
+Action:
+Inspect group state and application behavior.
+
+Problem: No space left on device.
+
+Likely Cause:
+EC2 EBS filesystem is full.
+
+Action:
+Check disk usage and expand storage if required.
+
+20. ESSENTIAL DIAGNOSTIC COMMANDS
+
+Check EC2 system health:
+
+```bash
+uptime
+free -h
+df -h
+```
+
+Check Docker service:
+
+```bash
+sudo systemctl status docker
+```
+
+Check running containers:
+
+```bash
+sudo docker ps -a
+```
+
+Check Kafka logs:
+
+```bash
+sudo docker logs --tail 100 kafka-day1
+```
+
+Check Kafka port on the host:
+
+```bash
+sudo ss -lntp | grep 9092
+```
+
+Check Kafka topics:
+
+```bash
+sudo docker exec kafka-day1 \
+/opt/kafka/bin/kafka-topics.sh \
+--bootstrap-server localhost:9092 \
+--list
+```
+
+Check consumer groups:
+
+```bash
+sudo docker exec kafka-day1 \
+/opt/kafka/bin/kafka-consumer-groups.sh \
+--bootstrap-server localhost:9092 \
+--list
+```
+
+Note:
+
+A successful port-listening check does not, by itself, prove Kafka is healthy.
+
+Verify with a Kafka CLI request as well.
+
+--------------------------------------------------
+
+PART F – TRAINER TEACHING SCRIPT
+
+21. TRAINER SCRIPT
+
+Opening: First 5 Minutes
+
+Good morning, everyone.
+
+Welcome to Apache Kafka Intermediate Training.
+
+Over the next nine days, we will understand Kafka architecture, producers, consumers, partitions, offsets, stream processing, Kafka Connect, security, and monitoring.
+
+We will not only study theory. Every day, we will implement concepts practically.
+
+Today, we will start by understanding why Kafka is used, how it works internally, and how to deploy and use Kafka on an AWS EC2 Ubuntu server.
+
+At the Architecture Section
+
+Think of Kafka as a central event-streaming platform.
+
+A producer publishes events into topics.
+
+Kafka stores those events in partitions managed by brokers.
+
+Consumers read the events and perform their business operations.
+
+Kafka is useful because applications can communicate asynchronously, without every service requiring a direct connection to every other service.
+
+Before the Hands-on Session
+
+Now we will create our own Kafka environment.
+
+We will launch an Ubuntu EC2 instance, install Docker, run Apache Kafka in KRaft mode, create a topic, send messages, and consume those messages.
+
+By the end of the lab, everyone should be able to demonstrate a working producer-consumer flow independently.
+
+During the Consumer Group Demonstration
+
+Notice that consumers in the same group cooperate to process partitions.
+
+When we add another consumer, Kafka can redistribute partition assignments.
+
+This is called rebalancing.
+
+If we have three partitions and four consumers, one consumer cannot receive a partition assignment for this topic.
+
+This is why partition count matters when designing Kafka applications.
+
+Closing
+
+Today we covered Kafka fundamentals, architecture, producers, consumers, brokers, topics, partitions, offsets, and consumer groups.
+
+We also deployed Kafka and tested message publishing and consumption.
+
+Tomorrow we will go deeper into topic management, partitioning, producer configurations, message keys, and producer behavior.
+
+--------------------------------------------------
+
+PART G – STUDENT ASSIGNMENT
+
+22. DAY 1 PRACTICAL ASSIGNMENT
+
+Total Marks: 30
+
+Task 1:
+
+Launch an Ubuntu EC2 instance and install Docker.
+
+Marks: 5
+
+Task 2:
+
+Run Apache Kafka in KRaft mode.
+
+Marks: 5
+
+Task 3:
+
+Create employee-events with three partitions.
+
+Marks: 4
+
+Task 4:
+
+Publish five employee records as JSON.
+
+Marks: 4
+
+Task 5:
+
+Consume and display the records.
+
+Marks: 4
+
+Task 6:
+
+Create two consumers in the same group.
+
+Marks: 4
+
+Task 7:
+
+Describe the consumer group and explain offsets.
+
+Marks: 4
+
+Total: 30 Marks
+
+Required Submission Evidence:
+
+Students should submit screenshots or terminal output demonstrating:
+
+1. Running Kafka container.
+2. Topic creation.
+3. Published messages.
+4. Consumed messages.
+5. Consumer group details.
+6. Short explanation of how the application works.
+
+Important:
+
+Students must not share private SSH keys, AWS credentials, or other secrets.
+
+--------------------------------------------------
+
+23. DAY 1 – KNOWLEDGE ASSESSMENT WITH ANSWERS
+
+Question 1: What is Apache Kafka?
+
+Answer: Distributed event-streaming platform.
+
+Question 2: What is a producer?
+
+Answer: Application that publishes records.
+
+Question 3: What is a consumer?
+
+Answer: Application that reads records.
+
+Question 4: What is a broker?
+
+Answer: Kafka server.
+
+Question 5: What is a topic?
+
+Answer: Named stream of events.
+
+Question 6: What is a partition?
+
+Answer: Ordered log within a topic.
+
+Question 7: What is an offset?
+
+Answer: Position of a record in a partition.
+
+Question 8: What is a consumer group?
+
+Answer: Consumers cooperating on partition assignments.
+
+Question 9: What is replication factor?
+
+Answer: Number of replicas maintained for a partition.
+
+Question 10: What replaces ZooKeeper in Kafka 4.x?
+
+Answer: KRaft.
+
+Question 11: Does Kafka guarantee ordering across all partitions?
+
+Answer: No. Ordering is per partition.
+
+Question 12: Can multiple consumer groups read the same topic?
+
+Answer: Yes.
+
+Question 13: Does consuming a record automatically delete it?
+
+Answer: No.
+
+Question 14: What does consumer lag indicate?
+
+Answer: Difference between log-end offset and committed offset.
+
+Question 15: Why use multiple Kafka brokers?
+
+Answer: Scalability, capacity, and fault tolerance.
+
+--------------------------------------------------
+
+PART H – EC2 CLEANUP AND COST CONTROL
+
+24. STOP AND RESTART KAFKA CONTAINER
+
+After the training, stop the container if you want to pause the Kafka process.
+
+Stop Kafka:
+
+```bash
+sudo docker stop kafka-day1
+```
+
+Restart Kafka:
+
+```bash
+sudo docker start kafka-day1
+```
+
+Check container status:
+
+```bash
+sudo docker ps
+```
+
+Important:
+
+For this classroom configuration, Kafka's data resides in the container's writable storage.
+
+Removing and recreating the container can lose the lab data.
+
+For subsequent days, use persistent Docker volumes before relying on the environment for important work.
+
+25. AWS EC2 COST MANAGEMENT
+
+Stop the EC2 instance from the AWS Console when it is not required.
+
+Important:
+
+EBS storage and some public IPv4 allocations can still incur charges even when the EC2 instance is stopped.
+
+Terminate the instance and delete unneeded resources when the training environment is no longer required.
+
+--------------------------------------------------
+
+26. DAY 1 TRAINER READINESS CHECKLIST
+
+[ ] EC2 Ubuntu instance is accessible.
+
+[ ] Docker Engine installed and running.
+
+[ ] Kafka container starts successfully.
+
+[ ] student-events topic created.
+
+[ ] Producer publishes JSON records.
+
+[ ] Consumer receives records.
+
+[ ] Consumer-group demonstration works.
+
+[ ] Student assignment is ready.
+
+Readiness: 0/8
+
+--------------------------------------------------
+
+END OF PART B – AWS EC2 UBUNTU HANDS-ON LABS
+
+DAY 1 COMPLETED
+
+Next Topic:
+
+Kafka Advanced Concepts – Topic Management, Partitioning, Producer Configurations, Message Keys, and Producer Behavior.
