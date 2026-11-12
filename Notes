@@ -2136,3 +2136,15 @@ DAY 1 & 2 COMPLETED
 Next Topic:
 
 Kafka Advanced Concepts – Topic Management, Partitioning, Producer Configurations, Message Keys, and Producer Behavior.
+
+
+CONCLUSION:
+-----------
+*Producers: Applications that send data to kafka topic
+*Topics: Communication channel(Logical channels to which producers send data and from which consumers read data
+*Consumers: Applications that subscribe to topics and process the data
+*Consumer Groups: Groups of consumers that share the load of reading from topics.
+
+
+
+
