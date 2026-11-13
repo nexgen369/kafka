@@ -2151,7 +2151,636 @@ Manages and coordinates kafka brokers
 Handles configuration,
 synchronization and leader election
 
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+DAY 3
+Step 1: Connect to EC2
 
+1. Open AWS Management Console.
+2. Navigate to EC2.
+3. Select your Kafka EC2 instance.
+4. Click Connect.
+5. Open EC2 Instance Connect.
+
+Step 2: Check Docker Containers
+
+```bash
+sudo docker ps -a
+```
+
+If the container is stopped, restart it:
+
+```bash
+sudo docker start kafka-day1
+```
+
+Step 3: Verify Kafka Topics
+
+```bash
+sudo docker exec kafka-day1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
+```
+
+Expected output:
+
+```text
+student-events
+```
+
+If the topic is missing, verify that you are using the original container and that its Kafka data has not been lost.
+
+
+Lab 2: Create and Manage Kafka Topics
+
+Duration: 20 Minutes
+
+Step 1: Create an Ecommerce Orders Topic
+
+```bash
+sudo docker exec kafka-day1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic ecommerce-orders --partitions 3 --replication-factor 1
+```
+
+Expected output:
+
+```text
+Created topic ecommerce-orders.
+```
+
+Step 2: List All Topics
+
+```bash
+sudo docker exec kafka-day1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
+```
+
+Step 3: Describe the Topic
+
+```bash
+sudo docker exec kafka-day1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic ecommerce-orders
+```
+
+Illustrative output:
+
+```text
+Topic: ecommerce-orders
+PartitionCount: 3
+ReplicationFactor: 1
+
+Partition: 0  Leader: 1  Replicas: 1  Isr: 1
+Partition: 1  Leader: 1  Replicas: 1  Isr: 1
+Partition: 2  Leader: 1  Replicas: 1  Isr: 1
+```
+
+The broker ID may differ in your environment.
+
+Step 4: Increase Partitions from 3 to 5
+
+```bash
+sudo docker exec kafka-day1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --alter --topic ecommerce-orders --partitions 5
+```
+
+Verify:
+
+```bash
+sudo docker exec kafka-day1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic ecommerce-orders
+```
+
+Expected output:
+
+```text
+PartitionCount: 5
+```
+
+Important Points:
+
+- Kafka allows increasing partition counts.
+- Kafka does not support directly decreasing partition counts.
+- Increasing partitions may change key-to-partition mapping.
+- Always consider ordering requirements before increasing partitions.
+
+
+Lab 3: Produce Messages Without Keys
+
+Duration: 10 Minutes
+
+Start the Kafka console producer:
+
+```bash
+sudo docker exec -it kafka-day1 /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic ecommerce-orders
+```
+
+Enter the following messages:
+
+```json
+{"order_id":1001,"customer":"Rahul","amount":1500}
+{"order_id":1002,"customer":"Priya","amount":2500}
+{"order_id":1003,"customer":"Arun","amount":3500}
+{"order_id":1004,"customer":"Meena","amount":4500}
+{"order_id":1005,"customer":"Vahid","amount":5500}
+```
+
+Press Ctrl+C after entering the messages.
+
+What Students Should Understand:
+
+- The producer sends records to Kafka.
+- No explicit key was supplied.
+- Kafka uses its configured keyless partitioning behavior.
+- Records may be distributed across partitions.
+
+Important:
+
+Do not assume that five messages will be distributed equally across five partitions.
+
+The actual distribution depends on the producer's partitioning strategy and batching behavior.
+
+
+Lab 4: Produce Messages Using Keys
+
+Duration: 15 Minutes
+
+Step 1: Create a New Keyed Topic
+
+```bash
+sudo docker exec kafka-day1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic keyed-orders --partitions 3 --replication-factor 1
+```
+
+Step 2: Start a Keyed Producer
+
+```bash
+sudo docker exec -it kafka-day1 /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic keyed-orders --property parse.key=true --property key.separator=:
+```
+
+Enter:
+
+```text
+customer101:Order Created
+customer102:Order Created
+customer101:Payment Completed
+customer103:Order Created
+customer102:Payment Completed
+customer101:Order Shipped
+```
+
+The colon separates the key and value.
+
+Example:
+
+```text
+customer101:Order Created
+```
+
+Key:
+
+```text
+customer101
+```
+
+Value:
+
+```text
+Order Created
+```
+
+Step 3: Consume Messages with Partition Information
+
+Open another EC2 terminal.
+
+Run:
+
+```bash
+sudo docker exec -it kafka-day1 /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic keyed-orders --from-beginning --property print.key=true --property print.partition=true --property print.offset=true
+```
+
+Observe:
+
+- Records with the same key normally go to the same partition.
+- Each partition maintains its own offsets.
+- Different keys may go to the same partition.
+- Records from different partitions may appear interleaved in the consumer output.
+
+Trainer Explanation:
+
+Imagine an e-commerce application.
+
+A customer places an order, completes payment, and receives a shipping update.
+
+If we use the customer ID as the Kafka message key, all events for that customer can be routed to the same partition under standard keyed partitioning.
+
+This helps preserve the order of events for that customer.
+
+Use Cases:
+
+- Banking transactions
+- E-commerce orders
+- Customer activity tracking
+- Payment processing
+
+
+Lab 5: Test Producer Acknowledgments
+
+Duration: 15 Minutes
+
+We will compare two acknowledgment configurations.
+
+Test A: acks=1
+
+```bash
+printf 'Order-2001\nOrder-2002\n' | sudo docker exec -i kafka-day1 /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic ecommerce-orders --producer-property acks=1
+```
+
+Test B: acks=all
+
+```bash
+printf 'Order-2003\nOrder-2004\n' | sudo docker exec -i kafka-day1 /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic ecommerce-orders --producer-property acks=all
+```
+
+Verify Messages:
+
+```bash
+sudo docker exec kafka-day1 /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic ecommerce-orders --from-beginning --timeout-ms 10000
+```
+
+You should find all four new order records among the previously published messages.
+
+Important Teaching Point:
+
+Both configurations can successfully publish records in this single-broker lab.
+
+This does not mean they provide equal durability.
+
+With replication factor 1, there are no follower replicas to acknowledge writes.
+
+
+PART 3: ADDITIONAL PRACTICAL DEMONSTRATIONS
+
+Lab 6: Inspect Partition Offsets
+
+Duration: 10 Minutes
+
+Run:
+
+```bash
+sudo docker exec kafka-day1 /opt/kafka/bin/kafka-get-offsets.sh --bootstrap-server localhost:9092 --topic ecommerce-orders
+```
+
+Illustrative output:
+
+```text
+ecommerce-orders:0:2
+ecommerce-orders:1:3
+ecommerce-orders:2:1
+ecommerce-orders:3:2
+ecommerce-orders:4:1
+```
+
+Your actual output will depend on how many messages were published and their partition assignments.
+
+Format:
+
+```text
+topic-name:partition-number:end-offset
+```
+
+Example:
+
+```text
+ecommerce-orders:1:3
+```
+
+This means:
+
+- Topic: ecommerce-orders
+- Partition: 1
+- Log-end offset: 3
+
+In a fresh log without deletions, three records would ordinarily have been appended at offsets 0, 1, and 2.
+
+Important:
+
+Offsets are used to identify record positions within individual partitions.
+
+
+Lab 7: Configure Topic Retention
+
+Kafka can retain records for a specified amount of time.
+
+For this demonstration, we will configure a one-hour retention period on the keyed-orders topic.
+
+Step 1: Configure Retention
+
+```bash
+sudo docker exec kafka-day1 /opt/kafka/bin/kafka-configs.sh --bootstrap-server localhost:9092 --entity-type topics --entity-name keyed-orders --alter --add-config retention.ms=3600000
+```
+
+Step 2: Verify Configuration
+
+```bash
+sudo docker exec kafka-day1 /opt/kafka/bin/kafka-configs.sh --bootstrap-server localhost:9092 --entity-type topics --entity-name keyed-orders --describe
+```
+
+Expected relevant configuration:
+
+```text
+retention.ms=3600000
+```
+
+Explanation:
+
+```text
+3600000 milliseconds = 1 hour
+```
+
+Important:
+
+Retention cleanup is asynchronous. Kafka does not guarantee that records will disappear at exactly one hour. Segment cleanup and other broker settings also affect deletion timing.
+
+Step 3: Restore the Default Configuration
+
+```bash
+sudo docker exec kafka-day1 /opt/kafka/bin/kafka-configs.sh --bootstrap-server localhost:9092 --entity-type topics --entity-name keyed-orders --alter --delete-config retention.ms
+```
+
+
+PART 4: PRODUCER TROUBLESHOOTING
+
+Common Kafka Producer Problems
+
+Problem: Topic already exists
+
+Possible Reason: Repeated creation command.
+
+Solution: Use --if-not-exists.
+
+Problem: Unknown topic
+
+Possible Reason: Wrong topic name or topic not created.
+
+Solution: List and verify topics.
+
+Problem: Producer appears stuck
+
+Possible Reason: Waiting for terminal input.
+
+Solution: Type a message and press Enter.
+
+Problem: Consumer displays nothing
+
+Possible Reason: No messages or incorrect topic.
+
+Solution: Verify producer and topic.
+
+Problem: Records appear out of order
+
+Possible Reason: Multiple partitions.
+
+Solution: Inspect ordering within each partition.
+
+Problem: InvalidRecordException
+
+Possible Reason: Incorrect key separator or record format.
+
+Solution: Check parse.key and key.separator.
+
+Problem: Cannot decrease partitions
+
+Possible Reason: Kafka does not support direct partition reduction.
+
+Solution: Create a replacement topic.
+
+Problem: TimeoutException
+
+Possible Reason: Broker, network, or metadata issue.
+
+Solution: Inspect broker status and logs.
+
+Diagnostic Commands:
+
+Check Docker containers:
+
+```bash
+sudo docker ps
+```
+
+Check Kafka container logs:
+
+```bash
+sudo docker logs --tail 50 kafka-day1
+```
+
+List Kafka topics:
+
+```bash
+sudo docker exec kafka-day1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
+```
+
+Describe a topic:
+
+```bash
+sudo docker exec kafka-day1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic ecommerce-orders
+```
+
+
+PART 5: TRAINER SPEAKING NOTES
+
+Topic Management
+
+Yesterday, we created a Kafka topic and sent messages.
+
+Today, we are going to understand how topics are organized internally.
+
+A Kafka topic contains partitions. Partitions help Kafka maintain ordering within individual logs and support parallel processing.
+
+Producer Architecture
+
+A producer is responsible for publishing records to Kafka.
+
+A producer record can contain a key, value, timestamp, and other metadata.
+
+Kafka uses the key and partitioning configuration to determine where the record should be stored.
+
+Key-Based Partitioning
+
+Imagine a banking application.
+
+We want transactions belonging to the same bank account to maintain their order.
+
+We can use the account ID as the Kafka record key.
+
+Under standard keyed partitioning, records with the same key normally go to the same partition, provided the partition count and partitioner configuration remain unchanged.
+
+Producer Acknowledgments
+
+When a producer sends a record, we need to decide what level of broker acknowledgment is required.
+
+This is controlled by the acks configuration.
+
+It influences the durability guarantees of producer writes.
+
+
+PART 6: DAY 3 STUDENT PRACTICAL ASSIGNMENT
+
+Bank Transaction Event Streaming
+
+Duration: 30 Minutes
+
+Total Marks: 30
+
+Students must independently complete the following tasks using Kafka CLI on AWS EC2 Ubuntu.
+
+Task 1: Create bank-transactions topic with 3 partitions and replication factor 1.
+
+Duration: 5 Minutes
+
+Marks: 5
+
+Task 2: Publish six transaction records using account IDs as keys.
+
+Duration: 7 Minutes
+
+Marks: 7
+
+Task 3: Consume records and display keys, partitions, and offsets.
+
+Duration: 7 Minutes
+
+Marks: 7
+
+Task 4: Increase topic partitions from 3 to 5.
+
+Duration: 5 Minutes
+
+Marks: 5
+
+Task 5: Explain partition ordering, producer keys, and acknowledgments.
+
+Duration: 6 Minutes
+
+Marks: 6
+
+Total: 30 Marks
+
+Sample Transaction Records:
+
+Students should use account IDs as message keys.
+
+```text
+ACC101:Deposit 5000
+ACC102:Withdrawal 2000
+ACC101:Withdrawal 1000
+ACC103:Deposit 8000
+ACC102:Deposit 3000
+ACC101:Balance Updated
+```
+
+Expected Learning:
+
+Students should identify:
+
+1. Whether all records with ACC101 are assigned to the same partition.
+2. How Kafka uses message keys.
+3. Why offsets are different across partitions.
+4. Why increasing partition count may change future key routing.
+5. How producer acknowledgment settings work.
+
+
+PART 7: DAY 3 ASSESSMENT QUESTIONS
+
+Question 1:
+
+What is the main purpose of Kafka partitions?
+
+A. Encrypt data
+
+B. Enable ordering within partitions and parallel processing
+
+C. Replace brokers
+
+Question 2:
+
+What normally happens to records with the same key under standard keyed partitioning?
+
+A. They go to the same partition
+
+B. They always go to different brokers
+
+C. They are automatically deleted
+
+Question 3:
+
+Can Kafka directly decrease the number of topic partitions?
+
+A. Yes
+
+B. No
+
+Question 4:
+
+What does acks=all require?
+
+A. No acknowledgment
+
+B. Leader acknowledgment only
+
+C. Required in-sync replica acknowledgments
+
+Question 5:
+
+Does Kafka guarantee ordering across all partitions?
+
+A. Yes
+
+B. No
+
+Answer Key:
+
+1. B
+2. A
+3. B
+4. C
+5. B
+
+
+DAY 3 COMPLETION CHECKLIST
+
+By the end of Day 2, students should be able to:
+
+- Explain Kafka topics.
+- Explain Kafka partitions.
+- Create Kafka topics.
+- Describe topic configurations.
+- Increase partition counts.
+- Publish messages without keys.
+- Publish messages using keys.
+- Understand key-based partitioning.
+- Explain Kafka producer architecture.
+- Understand acks=0, acks=1, and acks=all.
+- Inspect partition offsets.
+- Configure topic retention.
+- Troubleshoot producer problems.
+
+
+ADDITIONAL LEARNING RESOURCES
+
+Official Apache Kafka Documentation:
+
+https://kafka.apache.org/documentation/
+
+
+DAY 3 PREVIEW: KAFKA CONSUMERS AND CONSUMER GROUPS
+
+In Day 4, we will learn:
+
+1. What is a Kafka consumer?
+2. What is a consumer group?
+3. How consumers read messages.
+4. How partition assignment works.
+5. What are committed offsets?
+6. What is consumer lag?
+7. What is consumer rebalancing?
+8. How to create and run multiple consumers.
+9. How to troubleshoot consumer issues.
+
+Day 3 Summary:
+
+Today, we learned how Kafka organizes messages using topics and partitions, how producers publish messages, how message keys influence partition selection, and how acknowledgments affect producer writes.
 
 
 
