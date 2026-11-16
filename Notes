@@ -3390,7 +3390,7 @@ sudo docker exec kafka-day1 \
   /opt/kafka/bin/kafka-topics.sh \
   --bootstrap-server localhost:9092 \
   --describe \
-  --topic day3-orders
+  --topic day4-orders
 ```
 
 You should see:
