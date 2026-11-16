@@ -2153,6 +2153,557 @@ synchronization and leader election
 
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 DAY 3
+
+Apache Kafka – Day 2 Notes
+
+Topics, Partitions, and Producers
+
+
+Today's Topics
+
+- Topics and Partitions
+- Topic Management Commands
+- Kafka Producer Architecture and Message Flow
+- Producer Messages and Partition Keys
+- Producer Configuration and Acknowledgments
+- Inspect Partitions and Troubleshoot Producers
+- Practical Live Assignment
+
+
+1. What is a Kafka Topic?
+
+A Kafka topic is a named stream used to organize and store related events.
+
+Example: E-Commerce Application
+
+Topic: orders
+Events Stored: Customer order events
+
+Topic: payments
+Events Stored: Payment transactions
+
+Topic: shipments
+Events Stored: Shipping updates
+
+Topic: notifications
+Events Stored: Notification requests
+
+Topic: application-logs
+Events Stored: Application log events
+
+
+Example
+
+Think of a topic as a category of events.
+
+- When a customer places an order, the application publishes an event to the orders topic.
+- When payment succeeds, the payment application publishes an event to the payments topic.
+- Kafka stores these events so consumers can read and process them independently.
+
+Important
+
+A topic is not simply a folder or a database table. Internally, it consists of one or more partitions.
+
+
+2. What is a Kafka Partition?
+
+A partition is an ordered, append-only sequence of Kafka records.
+
+Example
+
+Topic: ecommerce-orders
+
+Partition 0
+
+Event 1 - Offset 0
+Event 2 - Offset 1
+Event 3 - Offset 2
+Event 4 - Offset 3
+
+Partition 1
+
+Event 1 - Offset 0
+Event 2 - Offset 1
+Event 3 - Offset 2
+Event 4 - Offset 3
+
+Partition 2
+
+Event 1 - Offset 0
+Event 2 - Offset 1
+Event 3 - Offset 2
+Event 4 - Offset 3
+
+
+Important Notes
+
+- Each partition has its own independent offset sequence.
+- Records are ordered within a partition.
+- Kafka does not guarantee global ordering across all partitions.
+
+
+Why Are Partitions Important?
+
+1. Parallel Processing
+
+Different partitions can be processed by different consumers within the same consumer group.
+
+2. Scalability
+
+Partition leaders can be distributed across multiple brokers.
+
+3. Ordering
+
+Records within one partition maintain their log order.
+
+4. Throughput
+
+Multiple partitions can help increase processing capacity.
+
+
+Interview Question
+
+If a topic has 3 partitions and 5 consumers in the same consumer group, how many consumers can actively process that topic simultaneously?
+
+Answer
+
+- 3 consumers can be assigned partitions.
+- 2 consumers will remain idle for that topic.
+
+This is because a partition can be assigned to only one consumer within the same consumer group at a time.
+
+
+3. How Does Kafka Select a Partition?
+
+Kafka producers can select a partition using:
+
+1. An explicitly specified partition number
+2. A message key
+3. The configured partitioning strategy
+
+
+Example: Key-Based Partitioning
+
+Kafka Producer
+
+Key: customer-101
+
+        |
+        |
+Partition Selection
+        |
+Key-Based Partitioner
+        |
+        |
+Partition 0    Partition 1    Partition 2
+
+
+With Kafka's standard keyed partitioning, records with the same serialized key normally go to the same partition, provided the partition count and partitioner configuration remain unchanged.
+
+
+Example
+
+Key: customer-101
+Value: Order Created
+
+Key: customer-101
+Value: Payment Completed
+
+Both records normally go to the same partition.
+
+This helps maintain ordering for events belonging to the same customer.
+
+
+Important
+
+Increasing the number of partitions can change the partition selected for a key.
+
+This is important when an application depends on ordering.
+
+
+4. What is a Kafka Producer?
+
+A Kafka producer is an application that publishes records to Kafka topics.
+
+
+A Producer Record Can Contain
+
+1. Topic name
+2. Optional partition
+3. Optional key
+4. Value
+5. Timestamp
+6. Optional headers
+
+
+Kafka Producer Message Flow
+
+1. Application Creates an Event
+
+Example: An order event in JSON format.
+
+2. Serialization
+
+Converts the key and value into bytes.
+
+3. Partition Selection
+
+Determines which topic partition receives the record.
+
+4. Batching
+
+The producer groups records into batches for efficient transmission.
+
+5. Network Request
+
+The producer sends the batch to the partition leader.
+
+6. Broker Append and Acknowledgment
+
+Kafka stores accepted records and acknowledges them according to the producer configuration.
+
+
+5. Important Kafka Producer Configurations
+
+bootstrap.servers
+
+Initial broker addresses.
+
+key.serializer
+
+Converts keys into bytes.
+
+value.serializer
+
+Converts values into bytes.
+
+acks
+
+Required broker acknowledgment level.
+
+retries
+
+Retry behavior for transient failures.
+
+batch.size
+
+Target batch size in bytes.
+
+linger.ms
+
+Time available for batching.
+
+compression.type
+
+Compression algorithm.
+
+enable.idempotence
+
+Helps prevent duplicate records caused by producer retries.
+
+
+Understand Producer Acknowledgments (acks)
+
+The acks configuration determines how much acknowledgment the producer requires from Kafka brokers before considering a write successful.
+
+
+acks=0
+
+The producer does not wait for a broker acknowledgment.
+
+This provides lower latency but weaker delivery guarantees.
+
+
+acks=1
+
+The partition leader acknowledges the write after appending the record to its local log.
+
+The write may be lost if the leader fails before replication.
+
+
+acks=all
+
+The producer waits for acknowledgment from the required in-sync replicas.
+
+This provides stronger durability when Kafka is properly configured with replication and minimum ISR settings.
+
+
+Important
+
+In a single-broker Kafka lab with replication factor 1, acks=all cannot provide broker-level fault tolerance because there are no follower replicas.
+
+
+6. Topic Management Commands
+
+Create a Topic
+
+```bash
+kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --create \
+  --topic ecommerce-orders \
+  --partitions 3 \
+  --replication-factor 1
+```
+
+
+List Topics
+
+```bash
+kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --list
+```
+
+
+Describe a Topic
+
+```bash
+kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --describe \
+  --topic ecommerce-orders
+```
+
+
+Increase Partitions
+
+```bash
+kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --alter \
+  --topic ecommerce-orders \
+  --partitions 5
+```
+
+
+Note
+
+Kafka supports increasing the partition count but does not support directly decreasing it.
+
+
+7. Inspect Partitions and Offsets
+
+Get Partition Offsets
+
+```bash
+kafka-get-offsets.sh \
+  --bootstrap-server localhost:9092 \
+  --topic ecommerce-orders
+```
+
+
+Example Output
+
+```text
+ecommerce-orders:0:2
+ecommerce-orders:1:3
+ecommerce-orders:2:1
+```
+
+
+Format
+
+```text
+topic-name:partition-number:end-offset
+```
+
+
+Example
+
+```text
+ecommerce-orders:1:3
+```
+
+
+This indicates that partition 1 has a log-end offset of 3.
+
+In a fresh log without deletions, this ordinarily means three records were appended at offsets 0, 1, and 2.
+
+
+8. Producer Troubleshooting
+
+Problem: Topic already exists
+
+Possible Reason: Topic was previously created.
+
+Solution: Use --if-not-exists.
+
+
+Problem: Unknown topic
+
+Possible Reason: Wrong topic name or topic not created.
+
+Solution: List topics and verify the name.
+
+
+Problem: Producer appears stuck
+
+Possible Reason: Waiting for terminal input.
+
+Solution: Type a record and press Enter.
+
+
+Problem: Consumer displays nothing
+
+Possible Reason: No messages or incorrect topic.
+
+Solution: Verify producer and topic.
+
+
+Problem: Records appear out of order
+
+Possible Reason: Multiple partitions.
+
+Solution: Check ordering within each partition.
+
+
+Problem: InvalidRecordException
+
+Possible Reason: Incorrect key separator.
+
+Solution: Check parse.key and key.separator.
+
+
+Problem: Cannot decrease partitions
+
+Possible Reason: Kafka does not support direct reduction.
+
+Solution: Create a replacement topic.
+
+
+Problem: TimeoutException
+
+Possible Reason: Broker, metadata, or network problem.
+
+Solution: Check broker status and logs.
+
+
+Diagnostic Commands
+
+Check Docker Containers
+
+```bash
+sudo docker ps
+```
+
+
+Check Kafka Logs
+
+```bash
+sudo docker logs --tail 50 kafka-day1
+```
+
+
+List Kafka Topics
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --list
+```
+
+
+9. Practical Live Assignment
+
+Bank Transaction Event Streaming
+
+Students must independently complete the following tasks using Kafka CLI on AWS EC2 Ubuntu.
+
+
+Task 1 - Create Topic (5 Marks)
+
+Create a topic named bank-transactions with:
+
+- 3 partitions
+- Replication factor 1
+
+
+Task 2 - Publish Transaction Records (7 Marks)
+
+Publish 6 transaction records using account IDs as keys.
+
+
+Task 3 - Consume Transaction Records (7 Marks)
+
+Consume records and display:
+
+- Keys
+- Partitions
+- Offsets
+
+
+Task 4 - Increase Partitions (5 Marks)
+
+Increase the topic partitions from 3 to 5.
+
+
+Task 5 - Explain Kafka Concepts (6 Marks)
+
+Explain:
+
+- Partition ordering
+- Producer keys
+- Producer acknowledgments
+
+
+Total Marks: 30
+
+
+Sample Transaction Records
+
+```text
+ACC101:Deposit 5000
+ACC102:Withdrawal 2000
+ACC101:Withdrawal 1000
+ACC103:Deposit 8000
+ACC102:Deposit 3000
+ACC101:Balance Updated
+```
+
+
+Student Questions
+
+1. What is the purpose of Kafka partitions?
+2. How does Kafka select a partition using a message key?
+3. Why do records with the same key normally go to the same partition?
+4. What happens when the number of partitions increases?
+5. What is the difference between acks=1 and acks=all?
+6. Does Kafka guarantee ordering across all partitions?
+
+
+Day 2 Completion Checklist
+
+By the end of today's class, students should be able to:
+
+- Understand Kafka topics and partitions.
+- Create and manage Kafka topics.
+- Explain partition offsets.
+- Publish keyed and keyless records.
+- Understand Kafka producer architecture.
+- Explain producer batching and serialization.
+- Understand producer acknowledgments.
+- Inspect topic partitions and offsets.
+- Troubleshoot common producer problems.
+- Complete the bank transaction streaming assignment.
+
+
+Day 3 Preview
+
+Kafka Consumers and Consumer Groups
+
+Topics:
+
+- Consumer architecture
+- Consumer groups
+- Partition assignment
+- Committed offsets
+- Consumer lag
+- Rebalancing
+- Building a basic consumer application
+
+
 Step 1: Connect to EC2
 
 1. Open AWS Management Console.
@@ -2781,6 +3332,7 @@ In Day 4, we will learn:
 Day 3 Summary:
 
 Today, we learned how Kafka organizes messages using topics and partitions, how producers publish messages, how message keys influence partition selection, and how acknowledgments affect producer writes.
+
 
 
 
