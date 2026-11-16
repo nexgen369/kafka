@@ -3333,6 +3333,341 @@ Day 3 Summary:
 
 Today, we learned how Kafka organizes messages using topics and partitions, how producers publish messages, how message keys influence partition selection, and how acknowledgments affect producer writes.
 
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Day 4
+Part 2 – AWS EC2 Practical Labs
+
+Lab 1 – Verify Kafka and Create a Fresh Topic
+
+Duration: 15 Minutes
+
+Connect to your existing EC2 instance using EC2 Instance Connect.
+
+Step 1: Verify Docker
+
+```bash
+sudo docker ps
+```
+
+If your Kafka container is stopped:
+
+```bash
+sudo docker start kafka-day1
+```
+
+Step 2: Verify Kafka Topics
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --list
+```
+
+Step 3: Create a New Topic for Day 4
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --create \
+  --if-not-exists \
+  --topic day4-orders \
+  --partitions 3 \
+  --replication-factor 1
+```
+
+Expected on First Creation:
+
+```text
+Created topic day4-orders.
+```
+
+Verify:
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --describe \
+  --topic day3-orders
+```
+
+You should see:
+
+PartitionCount: 3
+
+ReplicationFactor: 1
 
 
+Lab 2 – Create a Producer and Publish Records
+
+Duration: 10 Minutes
+
+We will use a keyed producer so students can observe which partitions receive the records.
+
+```bash
+sudo docker exec -it kafka-day1 \
+  /opt/kafka/bin/kafka-console-producer.sh \
+  --bootstrap-server localhost:9092 \
+  --topic day4-orders \
+  --property parse.key=true \
+  --property key.separator=:
+```
+
+Enter these records:
+
+```text
+ORDER101:Order Created
+ORDER102:Order Created
+ORDER103:Order Created
+ORDER101:Payment Completed
+ORDER102:Payment Completed
+ORDER103:Payment Completed
+ORDER101:Order Shipped
+ORDER102:Order Shipped
+ORDER103:Order Shipped
+```
+
+Press Enter after every record.
+
+Keep this terminal running.
+
+
+Lab 3 – Start Your First Consumer
+
+Duration: 10 Minutes
+
+Open a second EC2 terminal.
+
+Run:
+
+```bash
+sudo docker exec -it kafka-day1 \
+  /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server localhost:9092 \
+  --topic day4-orders \
+  --group order-group \
+  --from-beginning \
+  --property print.key=true \
+  --property print.partition=true \
+  --property print.offset=true
+```
+
+Expected Behavior:
+
+- Existing messages are displayed.
+- Each record shows its key, partition, and offset.
+- Events for the same order key should be in the same partition under the standard keyed partitioner.
+- Records from different partitions may appear in different relative order.
+
+Explanation:
+
+--from-beginning starts at the earliest available offset when the group has no valid committed position.
+
+It does not override an existing valid committed offset.
+
+
+Lab 4 – Run Multiple Consumers in the Same Group
+
+Duration: 15 Minutes
+
+Keep Consumer 1 running.
+
+Terminal 3 – Consumer 2
+
+```bash
+sudo docker exec -it kafka-day1 \
+  /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server localhost:9092 \
+  --topic day4-orders \
+  --group order-group \
+  --property print.partition=true
+```
+
+Terminal 4 – Consumer 3
+
+```bash
+sudo docker exec -it kafka-day1 \
+  /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server localhost:9092 \
+  --topic day4-orders \
+  --group order-group \
+  --property print.partition=true
+```
+
+All three consumers belong to the same group.
+
+Inspect Partition Assignment
+
+In another terminal:
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-consumer-groups.sh \
+  --bootstrap-server localhost:9092 \
+  --describe \
+  --group order-group \
+  --members \
+  --verbose
+```
+
+Expected:
+
+Three active members and their partition assignments after the group stabilizes.
+
+Each consumer should have one partition assigned in a balanced three-partition, three-consumer setup.
+
+Publish More Records
+
+Return to the producer terminal and enter:
+
+```text
+ORDER101:Delivered
+ORDER102:Delivered
+ORDER103:Delivered
+```
+
+Observe which consumer displays each event.
+
+Trainer Question:
+
+Why doesn't every consumer receive all three records?
+
+Answer:
+
+Because the consumers belong to the same group and divide partition ownership.
+
+If they used separate group IDs, each group could independently read all retained records.
+
+
+Lab 5 – Consumer Offsets and Lag
+
+Duration: 15 Minutes
+
+Step 1: Describe Consumer Group
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-consumer-groups.sh \
+  --bootstrap-server localhost:9092 \
+  --describe \
+  --group order-group
+```
+
+Illustrative Output:
+
+```text
+GROUP       TOPIC        PARTITION CURRENT-OFFSET LOG-END-OFFSET LAG
+order-group day3-orders  0         4              4              0
+order-group day3-orders  1         4              4              0
+order-group day3-orders  2         4              4              0
+```
+
+The actual offsets and distribution depend on how records were partitioned and when commits occurred.
+
+Step 2: Understand Consumer Lag
+
+Formula:
+
+Lag = Log-end offset - Committed offset
+
+Example:
+
+Log-end offset: 100
+
+Committed offset: 75
+
+Consumer lag: 25
+
+This means the group's committed position is 25 offsets behind the log end.
+
+Step 3: Demonstrate Lag
+
+Stop all three consumers using Ctrl+C.
+
+Wait briefly for their last auto-commit and group shutdown.
+
+Now publish 20 messages:
+
+```bash
+seq 1 20 | sed 's/^/Pending-Order-/' | \
+sudo docker exec -i kafka-day1 \
+  /opt/kafka/bin/kafka-console-producer.sh \
+  --bootstrap-server localhost:9092 \
+  --topic day4-orders
+```
+
+Check the Group Again:
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-consumer-groups.sh \
+  --bootstrap-server localhost:9092 \
+  --describe \
+  --group order-group
+```
+
+Expected:
+
+Lag should increase if the group's committed offsets remain behind the newly appended records.
+
+Restart a Consumer:
+
+```bash
+sudo docker exec -it kafka-day1 \
+  /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server localhost:9092 \
+  --topic day4-orders \
+  --group order-group
+```
+
+Watch the pending messages get consumed.
+
+Run the group-description command again after a few seconds.
+
+The lag should decrease as the consumer processes and commits offsets.
+
+Note:
+
+Console consumers auto-commit periodically.
+
+Reported lag is based on committed positions and may not update immediately.
+
+
+Lab 6 – Consumer Failure and Rebalancing
+
+Duration: 10 Minutes
+
+Start three consumers in order-group again.
+
+Use:
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-consumer-groups.sh \
+  --bootstrap-server localhost:9092 \
+  --describe \
+  --group order-group \
+  --members \
+  --verbose
+```
+
+Record their assignments.
+
+Now stop one consumer with Ctrl+C.
+
+Wait for the group to stabilize, then rerun the command.
+
+Expected Behavior:
+
+- The stopped consumer leaves the group.
+- Its partitions are reassigned to remaining members.
+- The remaining consumers continue processing.
+
+Explanation:
+
+Graceful shutdown and unexpected failure can have different detection times.
+
+Rebalancing behavior also depends on the configured group protocol.
 
