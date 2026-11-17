@@ -3671,3 +3671,559 @@ Graceful shutdown and unexpected failure can have different detection times.
 
 Rebalancing behavior also depends on the configured group protocol.
 
+------------------------------------------------------------------------------------------------------------------------
+DAY 5
+PART 2 – DAY 5 AWS EC2 HANDS-ON
+
+We will use the existing Docker Kafka environment on AWS EC2.
+
+Lab Prerequisites
+
+- Apache Kafka Docker container: kafka-day1
+- Kafka broker accessible inside the container at localhost:9092
+- EC2 Ubuntu terminal access
+- Kafka CLI scripts under /opt/kafka/bin/
+
+These commands assume the original single-broker lab.
+
+On Kafka_Server_2, first verify which broker is running and which address your client should use.
+
+--------------------------------------------------
+
+LAB 1 – CREATE A TOPIC WITH CUSTOM RETENTION
+
+Duration: 15 minutes
+
+Step 1: Verify Kafka
+
+```bash
+sudo docker ps
+```
+
+If the container is stopped:
+
+```bash
+sudo docker start kafka-day1
+```
+
+Step 2: Create the topic
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --create \
+  --if-not-exists \
+  --topic day5-retention \
+  --partitions 3 \
+  --replication-factor 1 \
+  --config retention.ms=600000 \
+  --config cleanup.policy=delete
+```
+
+Here:
+
+600000 milliseconds = 10 minutes.
+
+Step 3: Verify topic configuration
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-configs.sh \
+  --bootstrap-server localhost:9092 \
+  --entity-type topics \
+  --entity-name day5-retention \
+  --describe
+```
+
+Look for:
+
+```text
+retention.ms=600000
+cleanup.policy=delete
+```
+
+The output may include additional configuration metadata.
+
+--------------------------------------------------
+
+LAB 2 – PUBLISH AND CONSUME RECORDS
+
+Duration: 10 minutes
+
+Step 1: Publish keyed records
+
+```bash
+printf '101:Order Created\n102:Order Created\n101:Payment Completed\n103:Order Created\n' | \
+sudo docker exec -i kafka-day1 \
+  /opt/kafka/bin/kafka-console-producer.sh \
+  --bootstrap-server localhost:9092 \
+  --topic day5-retention \
+  --property parse.key=true \
+  --property key.separator=:
+```
+
+Step 2: Consume records
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server localhost:9092 \
+  --topic day5-retention \
+  --from-beginning \
+  --property print.key=true \
+  --property print.partition=true \
+  --property print.offset=true \
+  --timeout-ms 10000
+```
+
+Expected observation:
+
+The consumer should print the records with their:
+- Keys
+- Partition IDs
+- Offsets
+
+Trainer Explanation
+
+Each partition maintains its own offset sequence.
+
+For example:
+
+Offset 0 in Partition 1 is different from Offset 0 in Partition 2.
+
+--------------------------------------------------
+
+LAB 3 – DEMONSTRATE RETENTION AND SEGMENT CLEANUP
+
+Duration: 20 minutes
+
+For a classroom demonstration, we can use a short retention interval and a small segment size.
+
+Step 1: Create a separate demo topic
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --create \
+  --if-not-exists \
+  --topic day5-cleanup-demo \
+  --partitions 1 \
+  --replication-factor 1 \
+  --config retention.ms=30000 \
+  --config segment.bytes=16384 \
+  --config segment.ms=10000 \
+  --config cleanup.policy=delete
+```
+
+This configures:
+
+| Configuration | Value |
+|---|---|
+| Retention | 30 seconds |
+| Segment target size | 16 KiB |
+| Segment roll interval | 10 seconds |
+| Cleanup policy | Delete |
+
+Step 2: Publish 100 records
+
+```bash
+seq 1 100 | \
+sudo docker exec -i kafka-day1 \
+  /opt/kafka/bin/kafka-console-producer.sh \
+  --bootstrap-server localhost:9092 \
+  --topic day5-cleanup-demo
+```
+
+Step 3: Check latest offsets
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-get-offsets.sh \
+  --bootstrap-server localhost:9092 \
+  --topic day5-cleanup-demo \
+  --time -1
+```
+
+This reports the latest offset position.
+
+Step 4: Check earliest offsets
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-get-offsets.sh \
+  --bootstrap-server localhost:9092 \
+  --topic day5-cleanup-demo \
+  --time -2
+```
+
+Step 5: Observe retention cleanup
+
+After enough time for segment rolling and cleanup, repeat the earliest-offset command.
+
+Expected observation:
+
+The earliest available offset may advance as Kafka deletes expired segments.
+
+The exact time is not guaranteed. The broker's retention-check interval and segment eligibility affect when cleanup occurs.
+
+If nothing changes immediately, do not treat it as a failure.
+
+Retention is asynchronous, and active segments are not deleted merely because their records are old.
+
+--------------------------------------------------
+
+LAB 4 – CONSUMER OFFSETS AND MESSAGE REPLAY
+
+Duration: 25 minutes
+
+We will use day5-retention rather than the short-retention topic.
+
+Step 1: Start a consumer group
+
+```bash
+sudo docker exec -it kafka-day1 \
+  /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server localhost:9092 \
+  --topic day5-retention \
+  --group day5-replay-group \
+  --from-beginning
+```
+
+Let it consume the available records, then stop using Ctrl+C.
+
+Step 2: Inspect committed offsets
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-consumer-groups.sh \
+  --bootstrap-server localhost:9092 \
+  --describe \
+  --group day5-replay-group
+```
+
+Step 3: Preview offset reset
+
+Make sure the consumer group is inactive, then execute:
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-consumer-groups.sh \
+  --bootstrap-server localhost:9092 \
+  --group day5-replay-group \
+  --topic day5-retention \
+  --reset-offsets \
+  --to-earliest \
+  --dry-run
+```
+
+This previews the proposed reset without applying it.
+
+Step 4: Execute the reset
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-consumer-groups.sh \
+  --bootstrap-server localhost:9092 \
+  --group day5-replay-group \
+  --topic day5-retention \
+  --reset-offsets \
+  --to-earliest \
+  --execute
+```
+
+Step 5: Replay records
+
+```bash
+sudo docker exec -it kafka-day1 \
+  /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server localhost:9092 \
+  --topic day5-retention \
+  --group day5-replay-group
+```
+
+The consumer can read retained records again from the reset positions.
+
+Critical Teaching Point
+
+Resetting a consumer group's offsets does not restore deleted records.
+
+Replay works only for records still retained in Kafka.
+
+--------------------------------------------------
+
+LAB 5 – TOPIC CONFIGURATION CHANGES
+
+Duration: 15 minutes
+
+Step 1: Change retention from 10 minutes to one hour
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-configs.sh \
+  --bootstrap-server localhost:9092 \
+  --entity-type topics \
+  --entity-name day5-retention \
+  --alter \
+  --add-config retention.ms=3600000
+```
+
+Step 2: Verify configuration
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-configs.sh \
+  --bootstrap-server localhost:9092 \
+  --entity-type topics \
+  --entity-name day5-retention \
+  --describe
+```
+
+Expected configuration:
+
+```text
+retention.ms=3600000
+```
+
+Trainer Explanation
+
+Kafka supports modifying certain topic-level configurations without recreating the topic.
+
+3600000 milliseconds = 1 hour.
+
+--------------------------------------------------
+
+PART 3 – DELIVERY SEMANTICS PRACTICAL
+
+LAB 6 – DEMONSTRATE AT-LEAST-ONCE PROCESSING
+
+Duration: 20 minutes
+
+We will demonstrate why duplicate processing can occur when a consumer crashes before committing an offset.
+
+Step 1: Create a new topic
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --create \
+  --if-not-exists \
+  --topic day5-delivery \
+  --partitions 1 \
+  --replication-factor 1
+```
+
+Step 2: Publish a payment event
+
+```bash
+printf 'TXN101:Payment Completed\n' | \
+sudo docker exec -i kafka-day1 \
+  /opt/kafka/bin/kafka-console-producer.sh \
+  --bootstrap-server localhost:9092 \
+  --topic day5-delivery \
+  --property parse.key=true \
+  --property key.separator=:
+```
+
+Step 3: Read without committing
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server localhost:9092 \
+  --topic day5-delivery \
+  --group delivery-demo-group \
+  --from-beginning \
+  --consumer-property enable.auto.commit=false \
+  --max-messages 1
+```
+
+Expected output:
+
+```text
+Payment Completed
+```
+
+Step 4: Run the same consumer again
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server localhost:9092 \
+  --topic day5-delivery \
+  --group delivery-demo-group \
+  --from-beginning \
+  --consumer-property enable.auto.commit=false \
+  --max-messages 1
+```
+
+Expected output:
+
+```text
+Payment Completed
+```
+
+The same event appears again because this group has not committed its progress.
+
+Trainer Explanation
+
+This demonstrates how replay and duplicate processing can happen.
+
+A real at-least-once application:
+1. Reads a record.
+2. Processes the record.
+3. Commits the offset only after successful processing.
+
+If it crashes between processing and committing, the record may be processed again.
+
+--------------------------------------------------
+
+7. DIFFERENCE BETWEEN KAFKA RETENTION AND OFFSET COMMITS
+
+This is an important interview question.
+
+| Retention | Offset Commit |
+|---|---|
+| Controls how long records remain available | Tracks consumer group progress |
+| Configured on topic/broker | Managed by consumers |
+| Can delete old records | Does not delete topic records |
+| Applies independently of consumption | Helps consumers resume processing |
+
+Example:
+
+Even if a consumer has committed offset 100, Kafka may retain the first 100 records until retention cleanup makes them eligible for deletion.
+
+--------------------------------------------------
+
+PART 4  – DAY 5 STUDENT ASSIGNMENT
+
+Kafka Data Management Practical
+
+Total Marks: 30
+
+Suggested Duration: 30 minutes, or as homework if class time is limited.
+
+1. Create a topic named student-day5 with 3 partitions.
+
+   Marks: 5
+
+2. Configure retention.ms=600000.
+
+   Marks: 5
+
+3. Publish 6 keyed events and verify partitions.
+
+   Marks: 5
+
+4. Create a consumer group and inspect offsets.
+
+   Marks: 5
+
+5. Demonstrate offset reset and replay.
+
+   Marks: 5
+
+6. Explain at-most-once, at-least-once, and exactly-once.
+
+   Marks: 5
+
+Total: 30 Marks
+
+Student Checklist
+
+- [ ] Created the topic with 3 partitions.
+- [ ] Configured retention.ms.
+- [ ] Published 6 keyed events.
+- [ ] Verified partition assignments.
+- [ ] Created a consumer group.
+- [ ] Inspected consumer offsets.
+- [ ] Demonstrated offset reset and replay.
+- [ ] Explained all three delivery semantics.
+
+--------------------------------------------------
+
+8. DAY 4 QUICK KNOWLEDGE CHECK
+
+Question 1: Does Kafka immediately delete a message when a consumer reads it?
+
+A. Yes
+
+B. No
+
+C. Only for keyed messages
+
+Question 2: What does retention.ms configure?
+
+A. Consumer count
+
+B. Record retention time
+
+C. Partition number
+
+Question 3: What is a Kafka log segment?
+
+A. A portion of a partition's log
+
+B. A consumer group
+
+C. A producer key
+
+Question 4: Which delivery semantic allows duplicate processing?
+
+A. At-most-once
+
+B. At-least-once
+
+C. Neither
+
+Question 5: Can offset reset replay records already deleted by retention?
+
+A. Yes
+
+B. No
+
+C. Only when replication factor is 3
+
+Answers
+
+1. B – No
+2. B – Record retention time
+3. A – A portion of a partition's log
+4. B – At-least-once
+5. B – No
+
+--------------------------------------------------
+
+9. DAY 5 TRAINER RECAP
+
+At the end of today's session, ask students these questions:
+
+1. Why do different message keys sometimes go to the same partition?
+2. What happens when Kafka's retention period expires?
+3. What is the difference between a committed offset and a record's offset?
+4. Why can payment processing be duplicated after a consumer failure?
+
+DAY 5 PREVIEW
+
+Building practical Kafka producers and consumers using Python.
+
+Topics include:
+- Python Kafka producers
+- Python Kafka consumers
+- JSON messages
+- Exception handling
+- Consumer groups
+- Mini event-driven application
+
+TRAINER RECOMMENDATION
+
+For today's session, prioritize these three practical labs:
+
+1. Lab 3 – Retention and segment cleanup.
+2. Lab 4 – Offset management and message replay.
+3. Lab 6 – Delivery semantics.
+
+These demonstrate three particularly important Kafka data-management concepts.
+
