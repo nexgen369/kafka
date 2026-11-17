@@ -3812,7 +3812,7 @@ sudo docker exec kafka-day1 \
   --partitions 1 \
   --replication-factor 1 \
   --config retention.ms=30000 \
-  --config segment.bytes=16384 \
+  --config segment.bytes=1048576 \
   --config segment.ms=10000 \
   --config cleanup.policy=delete
 ```
@@ -3822,7 +3822,7 @@ This configures:
 | Configuration | Value |
 |---|---|
 | Retention | 30 seconds |
-| Segment target size | 16 KiB |
+| Segment target size | 1 MiB |
 | Segment roll interval | 10 seconds |
 | Cleanup policy | Delete |
 
