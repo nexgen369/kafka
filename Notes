@@ -3559,9 +3559,9 @@ Illustrative Output:
 
 ```text
 GROUP       TOPIC        PARTITION CURRENT-OFFSET LOG-END-OFFSET LAG
-order-group day3-orders  0         4              4              0
-order-group day3-orders  1         4              4              0
-order-group day3-orders  2         4              4              0
+order-group day4-orders  0         4              4              0
+order-group day4-orders  1         4              4              0
+order-group day4-orders  2         4              4              0
 ```
 
 The actual offsets and distribution depend on how records were partitioned and when commits occurred.
