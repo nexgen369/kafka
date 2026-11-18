@@ -4227,3 +4227,1203 @@ For today's session, prioritize these three practical labs:
 
 These demonstrate three particularly important Kafka data-management concepts.
 
+-----------------------------------------------------------------------------------------------------------------------------------------------
+DAY 6 – KAFKA STREAMS
+
+Real-Time Order Processing with Kafka Streams
+
+Complete Practical Training Material
+
+PART 2 – AWS EC2 HANDS-ON LAB
+
+Project: Real-Time Order Processing with Kafka Streams
+
+Technologies Used
+
+| Component | Technology |
+| --- | --- |
+| Server | AWS EC2 Ubuntu |
+| Kafka broker | Existing kafka-day1 Docker container |
+| Programming language | Java 17 |
+| Build tool | Maven |
+| Processing library | Kafka Streams |
+| Kafka Streams version | 4.1.0 |
+| Input topic | day6-orders-input |
+| Output topic | day6-orders-output |
+
+LAB 1 – Verify Kafka and Install Java
+
+Step 1: Check Kafka container
+
+Copy and execute:
+
+bash
+
+```bash
+sudo docker ps
+```
+
+If the Kafka container is stopped:
+
+bash
+
+```bash
+sudo docker start kafka-day1
+```
+
+Verify Kafka connectivity:
+
+bash
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --list
+```
+
+Expected result:
+
+Kafka should respond successfully and display the existing topics.
+
+Step 2: Install Java 17 and Maven
+
+Update Ubuntu:
+
+bash
+
+```bash
+sudo apt update
+```
+
+Install Java and Maven:
+
+bash
+
+```bash
+sudo apt install -y \
+  openjdk-17-jdk \
+  maven
+```
+
+Verify Java:
+
+bash
+
+```bash
+java -version
+```
+
+Expected:
+
+text
+
+```text
+openjdk version "17.x.x"
+```
+
+Verify Maven:
+
+bash
+
+```bash
+mvn -version
+```
+
+Expected:
+
+text
+
+```text
+Apache Maven 3.x.x
+Java version: 17
+```
+
+Step 3: Verify Kafka port mapping
+
+Execute:
+
+bash
+
+```bash
+sudo docker port kafka-day1
+```
+
+Expected:
+
+A published mapping for port `9092`.
+
+Important: The Java application runs directly on the EC2 host, not inside the Kafka Docker container. Therefore, Kafka must advertise a host-reachable address. Docker port mapping alone does not guarantee this.
+
+LAB 2 – Create Kafka Topics
+
+We need two Kafka topics:
+
+1. `day6-orders-input`
+2. `day6-orders-output`
+
+Step 1: Create input topic
+
+bash
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --create \
+  --if-not-exists \
+  --topic day6-orders-input \
+  --partitions 3 \
+  --replication-factor 1
+```
+
+Step 2: Create output topic
+
+bash
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --create \
+  --if-not-exists \
+  --topic day6-orders-output \
+  --partitions 3 \
+  --replication-factor 1
+```
+
+Step 3: Verify topics
+
+bash
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --list
+```
+
+Expected:
+
+text
+
+```text
+day6-orders-input
+day6-orders-output
+```
+
+Step 4: Describe input topic
+
+bash
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --describe \
+  --topic day6-orders-input
+```
+
+Expected configuration:
+
+- Partitions: 3
+- Replication factor: 1
+
+LAB 3 – Create Java Maven Project
+
+Step 1: Create project directory
+
+bash
+
+```bash
+mkdir -p ~/kafka-day6/src/main/java/com/training
+```
+
+Navigate to project:
+
+bash
+
+```bash
+cd ~/kafka-day6
+```
+
+Verify:
+
+bash
+
+```bash
+pwd
+```
+
+Expected:
+
+text
+
+```text
+/home/ubuntu/kafka-day6
+```
+
+Step 2: Create pom.xml
+
+Execute:
+
+bash
+
+```bash
+nano pom.xml
+```
+
+Copy the entire configuration below.
+
+xml
+
+```xml
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.training</groupId>
+    <artifactId>kafka-day6</artifactId>
+    <version>1.0-SNAPSHOT</version>
+
+    <properties>
+        <maven.compiler.release>17</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <dependencies>
+
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-streams</artifactId>
+            <version>4.1.0</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>2.0.17</version>
+        </dependency>
+
+    </dependencies>
+
+    <build>
+        <plugins>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+            </plugin>
+
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+            </plugin>
+
+        </plugins>
+    </build>
+
+</project>
+```
+
+Save the file:
+
+- Press `Ctrl + O`
+- Press `Enter`
+- Press `Ctrl + X`
+
+Verify:
+
+bash
+
+```bash
+cat pom.xml
+```
+
+LAB 4 – Write Kafka Streams Java Application
+
+Step 1: Create Java file
+
+Execute:
+
+bash
+
+```bash
+nano src/main/java/com/training/OrderStreamApp.java
+```
+
+Copy the complete Java program:
+
+java
+
+```java
+package com.training;
+
+import java.util.Properties;
+
+import org.apache.kafka.common.serialization.Serdes;
+import org.apache.kafka.streams.KafkaStreams;
+import org.apache.kafka.streams.StreamsBuilder;
+import org.apache.kafka.streams.StreamsConfig;
+import org.apache.kafka.streams.kstream.KStream;
+import org.apache.kafka.streams.kstream.Produced;
+
+public class OrderStreamApp {
+
+    public static void main(String[] args) {
+
+        Properties props = new Properties();
+
+        props.put(
+            StreamsConfig.APPLICATION_ID_CONFIG,
+            "day6-order-stream-app"
+        );
+
+        props.put(
+            StreamsConfig.BOOTSTRAP_SERVERS_CONFIG,
+            "localhost:9092"
+        );
+
+        props.put(
+            StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG,
+            Serdes.String().getClass()
+        );
+
+        props.put(
+            StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG,
+            Serdes.String().getClass()
+        );
+
+        StreamsBuilder builder = new StreamsBuilder();
+
+        KStream<String, String> orders =
+            builder.stream("day6-orders-input");
+
+        KStream<String, String> processedOrders = orders
+            .filter((key, value) -> value != null)
+            .mapValues(value -> value.toUpperCase());
+
+        processedOrders.to(
+            "day6-orders-output",
+            Produced.with(Serdes.String(), Serdes.String())
+        );
+
+        KafkaStreams streams =
+            new KafkaStreams(builder.build(), props);
+
+        Runtime.getRuntime().addShutdownHook(
+            new Thread(streams::close)
+        );
+
+        streams.start();
+
+        System.out.println(
+            "Kafka Streams application started..."
+        );
+    }
+}
+```
+
+Save:
+
+- `Ctrl + O`
+- `Enter`
+- `Ctrl + X`
+
+Verify Java file:
+
+bash
+
+```bash
+cat src/main/java/com/training/OrderStreamApp.java
+```
+
+Step 2: Understand the Java application
+
+Java Code Explanation for Students
+
+| Java component | Explanation |
+| --- | --- |
+| Properties | Stores application configuration |
+| APPLICATION\_ID\_CONFIG | Unique identifier for the Streams application |
+| BOOTSTRAP\_SERVERS\_CONFIG | Kafka broker connection |
+| StreamsBuilder | Builds the processing topology |
+| KStream | Represents a continuous event stream |
+| filter() | Removes records with null values |
+| mapValues() | Converts message values to uppercase |
+| to() | Writes processed records to output topic |
+| KafkaStreams | Creates the Kafka Streams runtime |
+| streams.start() | Starts continuous processing |
+| streams.close() | Closes application gracefully |
+
+Processing Flow
+
+Input Topic
+
+`day6-orders-input`
+
+↓
+
+KStream
+
+Reads order events
+
+↓
+
+filter()
+
+Removes null values
+
+↓
+
+mapValues()
+
+Converts messages to uppercase
+
+↓
+
+Output Topic
+
+`day6-orders-output`
+
+Important teaching point: This application preserves each message's key while transforming its value.
+
+Example:
+
+text
+
+```text
+Input:
+101:order created
+
+Output:
+101:ORDER CREATED
+```
+
+LAB 5 – Compile and Run Application
+
+Step 1: Compile the project
+
+Make sure you are inside:
+
+bash
+
+```bash
+cd ~/kafka-day6
+```
+
+Execute:
+
+bash
+
+```bash
+mvn clean compile
+```
+
+Expected:
+
+text
+
+```text
+BUILD SUCCESS
+```
+
+If Maven reports dependency download errors, check internet access and Maven Central connectivity.
+
+Step 2: Run Kafka Streams application
+
+Execute:
+
+bash
+
+```bash
+mvn exec:java \
+  -Dexec.mainClass=com.training.OrderStreamApp
+```
+
+Expected:
+
+text
+
+```text
+Kafka Streams application started...
+```
+
+Keep this terminal running.
+
+Important: If the application cannot connect to Kafka, inspect the broker's advertised listener configuration. A Docker port mapping alone does not guarantee that `localhost:9092` is correctly advertised to the EC2 host.
+
+LAB 6 – Publish Order Events
+
+Open a second EC2 terminal.
+
+Execute:
+
+bash
+
+```bash
+printf '101:order created\n102:payment completed\n103:order shipped\n104:order delivered\n' | \
+sudo docker exec -i kafka-day1 \
+  /opt/kafka/bin/kafka-console-producer.sh \
+  --bootstrap-server localhost:9092 \
+  --topic day6-orders-input \
+  --property parse.key=true \
+  --property key.separator=:
+```
+
+Four keyed order events are now published.
+
+Expected input:
+
+text
+
+```text
+101:order created
+102:payment completed
+103:order shipped
+104:order delivered
+```
+
+LAB 7 – Verify Processed Output
+
+Open another EC2 terminal.
+
+Execute:
+
+bash
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server localhost:9092 \
+  --topic day6-orders-output \
+  --from-beginning \
+  --property print.key=true \
+  --property print.value=true \
+  --property print.partition=true \
+  --timeout-ms 15000
+```
+
+Expected message content:
+
+text
+
+```text
+101  ORDER CREATED
+102  PAYMENT COMPLETED
+103  ORDER SHIPPED
+104  ORDER DELIVERED
+```
+
+The actual console output also displays partition information.
+
+Important: Ordering across different partitions is not guaranteed.
+
+Lab 1–7 Complete
+
+Successful result:
+
+Your Java Kafka Streams application has:
+
+1. Read events from the input topic.
+2. Filtered null values.
+3. Converted messages to uppercase.
+4. Preserved message keys.
+5. Written processed events to the output topic.
+
+PART 3 – ADVANCED DAY 6 CONCEPTS
+
+5. KStream vs KTable
+
+This is an important Kafka Streams interview topic.
+
+Consider these events:
+
+text
+
+```text
+101:CREATED
+101:PAID
+101:SHIPPED
+```
+
+KStream
+
+A KStream treats all three as separate records.
+
+text
+
+```text
+101 → CREATED
+101 → PAID
+101 → SHIPPED
+```
+
+All events are processed individually.
+
+KTable
+
+A KTable represents the latest value associated with each key.
+
+text
+
+```text
+101 → CREATED
+101 → PAID
+101 → SHIPPED
+```
+
+The current logical state after processing all three updates is:
+
+text
+
+```text
+101 → SHIPPED
+```
+
+Comparison
+
+| KStream | KTable |
+| --- | --- |
+| Represents event stream | Represents latest state |
+| Every record is an event | Records update keyed state |
+| Duplicate keys can appear | Latest value per key |
+| Event-oriented | State-oriented |
+| Useful for event processing | Useful for current-state queries |
+
+Teaching example:
+
+An order management system receives:
+
+- Order created.
+- Payment completed.
+- Order shipped.
+
+KStream processes all three events.
+
+KTable maintains the latest order status.
+
+A KTable's state can be backed by local state stores and Kafka changelog topics, depending on the topology.
+
+6. Aggregations and Windowing
+
+A. Aggregation
+
+Suppose Kafka receives:
+
+text
+
+```text
+customer101:Order-1
+customer102:Order-2
+customer101:Order-3
+customer101:Order-4
+```
+
+We want to calculate how many orders each customer placed.
+
+Expected result:
+
+| Customer | Order count |
+| --- | --- |
+| customer101 | 3 |
+| customer102 | 1 |
+
+Kafka Streams DSL example:
+
+java
+
+```java
+orders
+    .groupByKey()
+    .count();
+```
+
+This assumes the keys are customer identifiers and suitable SerDes are configured.
+
+Explain aggregation:
+
+- `groupByKey()` groups events based on their keys.
+- `count()` calculates the number of records per key.
+- Kafka Streams maintains aggregation state.
+
+B. Windowing
+
+Windowing groups events into specific time periods.
+
+Example:
+
+Count payment transactions during each five-minute window.
+
+Five-minute tumbling windows
+
+| Time window | Transactions |
+| --- | --- |
+| 10:00–10:05 | 12 |
+| 10:05–10:10 | 18 |
+| 10:10–10:15 | 9 |
+
+Illustrative transaction counts, not measured Kafka output.
+
+Kafka Streams supports:
+
+| Window type | Explanation |
+| --- | --- |
+| Tumbling | Fixed, non-overlapping time windows |
+| Hopping | Fixed-size windows that advance by a defined interval |
+| Sliding | Windows based on differences in event timestamps |
+| Session | Groups activity separated by periods of inactivity |
+
+Real-world examples:
+
+- Five-minute payment transaction count.
+- Ten-minute website visitor count.
+- Customer activity session tracking.
+- Hourly order aggregation.
+
+7. Fault Tolerance and Processing Guarantees
+
+Kafka Streams provides fault tolerance through Kafka-backed state management and processing guarantees.
+
+A. At-least-once
+
+- Records are processed at least once.
+- A failure may cause some records to be processed again.
+- Duplicate processing is possible.
+
+B. Exactly-once v2
+
+- Uses Kafka transactions.
+- Coordinates supported Kafka reads, processing state and Kafka writes.
+- Helps prevent duplicate results within the supported Kafka processing boundary.
+
+C. Idempotency
+
+Idempotency means performing the same operation multiple times without changing the final result after the first successful execution.
+
+Example:
+
+A payment should not be charged twice because an event was replayed.
+
+External effects such as payment charges still require safeguards against duplication.
+
+D. Kafka Streams recovery
+
+Kafka Streams uses:
+
+- Kafka changelog topics.
+- Local state stores.
+- Consumer offsets.
+- Partition assignments.
+- Kafka transactions when exactly-once processing is configured.
+
+When an application instance fails, its work can be reassigned to another instance, and state can be restored.
+
+Current lab configuration:
+
+Our Java application uses the default at-least-once processing guarantee.
+
+8. Troubleshooting During the Live Lab
+
+| Problem | Likely cause | Action |
+| --- | --- | --- |
+| BUILD FAILURE | Java compilation or Maven dependency issue | Review first Maven error |
+| Connection refused | Broker unavailable or listener mismatch | Check Docker and broker listeners |
+| No output messages | Application not running or topic mismatch | Verify both topics |
+| Messages processed twice | Restart or at-least-once replay | Review offsets and processing guarantees |
+| Application continues running | Streams applications are continuous | Press Ctrl+C to stop |
+
+Useful Troubleshooting Commands
+
+Check Docker:
+
+bash
+
+```bash
+sudo docker ps
+```
+
+Check Kafka topics:
+
+bash
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --list
+```
+
+Check Kafka container logs:
+
+bash
+
+```bash
+sudo docker logs --tail 100 kafka-day1
+```
+
+Check Java:
+
+bash
+
+```bash
+java -version
+```
+
+Check Maven:
+
+bash
+
+```bash
+mvn -version
+```
+
+Important: Application ID and offsets
+
+For a fresh demonstration, you can use a new application ID if you need the application to consume retained input records from the beginning.
+
+Existing application IDs normally resume from their committed offsets.
+
+PART 4 – DAY 6 STUDENT ASSIGNMENT
+
+Real-Time Payment Processing
+
+30 Marks
+
+Assignment Objective
+
+Students should independently modify today's Java Kafka Streams application to process payment events.
+
+Assignment Requirements
+
+| Task | Marks |
+| --- | --- |
+| Create payment-input and payment-output topics | 5 |
+| Modify Java application to read payment-input | 5 |
+| Filter messages containing SUCCESS | 5 |
+| Convert successful payment messages to uppercase | 5 |
+| Write processed events to payment-output | 5 |
+| Demonstrate results and explain topology | 5 |
+| Total | 30 |
+
+Step 1: Create payment-input topic
+
+bash
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --create \
+  --if-not-exists \
+  --topic payment-input \
+  --partitions 3 \
+  --replication-factor 1
+```
+
+Step 2: Create payment-output topic
+
+bash
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --create \
+  --if-not-exists \
+  --topic payment-output \
+  --partitions 3 \
+  --replication-factor 1
+```
+
+Step 3: Modify Java application
+
+Students should implement this processing logic:
+
+java
+
+```java
+KStream<String, String> payments =
+    builder.stream("payment-input");
+
+KStream<String, String> successfulPayments =
+    payments
+        .filter((key, value) ->
+            value != null &&
+            value.contains("SUCCESS")
+        )
+        .mapValues(value -> value.toUpperCase());
+
+successfulPayments.to(
+    "payment-output",
+    Produced.with(Serdes.String(), Serdes.String())
+);
+```
+
+Replace the original order-processing topology with this payment-processing topology.
+
+Step 4: Compile
+
+bash
+
+```bash
+cd ~/kafka-day6
+mvn clean compile
+```
+
+Expected:
+
+text
+
+```text
+BUILD SUCCESS
+```
+
+Step 5: Publish payment events
+
+bash
+
+```bash
+printf 'P101:PAYMENT SUCCESS\nP102:PAYMENT FAILED\nP103:PAYMENT SUCCESS\nP104:PAYMENT PENDING\n' | \
+sudo docker exec -i kafka-day1 \
+  /opt/kafka/bin/kafka-console-producer.sh \
+  --bootstrap-server localhost:9092 \
+  --topic payment-input \
+  --property parse.key=true \
+  --property key.separator=:
+```
+
+Step 6: Verify payment output
+
+bash
+
+```bash
+sudo docker exec kafka-day1 \
+  /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server localhost:9092 \
+  --topic payment-output \
+  --from-beginning \
+  --property print.key=true \
+  --property print.value=true \
+  --timeout-ms 15000
+```
+
+Expected:
+
+text
+
+```text
+P101 PAYMENT SUCCESS
+P103 PAYMENT SUCCESS
+```
+
+Only successful payment messages should appear.
+
+9. Interview and Revision Questions
+
+Ask students these questions during the practical session.
+
+1. What is Kafka Streams, and how is it different from a Kafka consumer?
+2. What is the difference between KStream and KTable?
+3. What is stateless processing?
+4. What is a state store?
+5. How does Kafka Streams recover after an application failure?
+6. What is a windowed aggregation?
+7. Can multiple Kafka Streams application instances process a topic in parallel?
+8. What does the application ID control?
+9. What is the purpose of `filter()`?
+10. What is the purpose of `mapValues()`?
+11. What is the difference between at-least-once and exactly-once processing?
+12. What is the purpose of Kafka changelog topics?
+
+Additional Interview Answers for Trainers
+
+| Question | Short answer |
+| --- | --- |
+| What is Kafka Streams? | Java library for processing Kafka data streams |
+| What is KStream? | Represents continuous events |
+| What is KTable? | Represents latest keyed state |
+| What is stateless processing? | Processing without maintaining state between records |
+| What is stateful processing? | Processing that maintains information across records |
+| What is a state store? | Local storage for processing state |
+| What is windowing? | Grouping events into time-based windows |
+| What is application ID? | Identifies a Streams application and its associated Kafka resources |
+| What is fault tolerance? | Ability to recover from failures |
+| What is exactly-once v2? | Transactional processing guarantee within Kafka's supported boundary |
+
+DAY 6 – COMPLETION CHECKLIST
+
+Students should complete the following activities.
+
+Student Progress: 0/15
+
+[ ]Installed Java 17 on AWS EC2
+
+[ ]Installed Maven
+
+[ ]Verified existing Kafka Docker container
+
+[ ]Created Kafka input and output topics
+
+[ ]Created Maven Java project
+
+[ ]Configured Kafka Streams 4.1.0 dependency
+
+[ ]Written Java Kafka Streams application
+
+[ ]Compiled Java application successfully
+
+[ ]Started Kafka Streams application
+
+[ ]Published order events
+
+[ ]Verified uppercase output messages
+
+[ ]Understood KStream and KTable
+
+[ ]Understood aggregation and windowing
+
+[ ]Understood fault tolerance and processing guarantees
+
+[ ]Completed payment-processing assignment
+
+NEXT CLASS – DAY 7
+
+Kafka Connect
+
+Topics Covered:
+
+1. Introduction to Kafka Connect.
+2. Kafka Connect architecture.
+3. Source connectors.
+4. Sink connectors.
+5. Connector configuration.
+6. Standalone and distributed modes.
+7. Practical data integration.
+8. Real-time database integration.
+
+DAY 6 – LIVE TEACHING INSTRUCTIONS
+
+Start with Lab 1 and complete each step before moving forward.
+
+Teaching Sequence:
+
+- First, verify Docker and Kafka.
+- Second, install Java 17 and Maven.
+- Third, create Kafka topics.
+- Fourth, create the Maven project.
+- Fifth, write the Java application.
+- Sixth, compile and run.
+- Seventh, publish events and verify output.
+- Finally, explain advanced concepts and assign payment processing.
+
+Trainer Instruction:
+
+Validate each student's terminal output before proceeding to the next lab. This helps identify installation, connectivity, compilation and runtime issues early.
+
+
+DAY 6 – STUDENT PRACTICAL ASSIGNMENT
+Real-Time Payment Processing Using Kafka Streams
+
+Total Marks: 30
+
+Technology Stack:
+
+AWS EC2 Ubuntu
+Docker Kafka (kafka-day1)
+Java 17
+Maven
+Kafka Streams 4.1.0
+1. Assignment Objective
+
+Develop a real-time payment processing application using Kafka Streams.
+
+Your application must read payment events from an input topic, filter successful payments, convert the messages to uppercase, and publish the processed events to an output topic.
+
+2. Assignment Requirements
+No.	Task	Marks
+1	Create payment-input and payment-output Kafka topics with 3 partitions and replication factor 1	5
+2	Create a Java application named PaymentStreamApp.java to read events from payment-input	5
+3	Filter only payment messages containing SUCCESS	5
+4	Convert successful payment messages into uppercase using mapValues()	5
+5	Write processed messages to payment-output	5
+6	Demonstrate the application execution, output and explain the processing topology	5
+	Total	30
+3. Sample Input Data
+
+Publish the following payment events to the payment-input topic:
+
+text
+P101:PAYMENT SUCCESS
+P102:PAYMENT FAILED
+P103:PAYMENT SUCCESS
+P104:PAYMENT PENDING
+P105:PAYMENT SUCCESS
+P106:PAYMENT FAILED
+
+4. Expected Output
+
+Your payment-output topic should contain only successful payment events.
+
+text
+P101:PAYMENT SUCCESS
+P103:PAYMENT SUCCESS
+P105:PAYMENT SUCCESS
+
+
+Failed and pending payment events must not appear in the output topic.
+
+5. Technical Requirements
+
+Your Java application must use:
+
+Properties for Kafka configuration.
+StreamsBuilder to create the processing topology.
+KStream to read payment events.
+filter() to select successful payments.
+mapValues() to convert messages to uppercase.
+to() to publish processed messages.
+KafkaStreams to start the application.
+6. Submission Requirements
+
+Submit the following screenshots:
+
+Kafka input and output topic creation.
+Java source code (PaymentStreamApp.java).
+Maven compilation showing BUILD SUCCESS.
+Kafka Streams application running successfully.
+Payment events published to the input topic.
+Processed payment events displayed from the output topic.
+
+Also submit a short explanation of how your Kafka Streams application works.
+
+7. Viva Questions
+What is Kafka Streams?
+What is the difference between KStream and KTable?
+What is the purpose of filter()?
+What is the purpose of mapValues()?
+What is the difference between a Kafka input topic and output topic?
+What is a Kafka Streams application ID?
+How does Kafka Streams process events continuously?
+What happens when a payment contains FAILED?
+What is fault tolerance in Kafka Streams?
+What is the difference between at-least-once and exactly-once processing?
+8. Evaluation Criteria
+Correct Kafka topic creation.
+Successful Java application development.
+Correct filtering of payment events.
+Correct uppercase transformation.
+Successful output verification.
+Clear explanation and demonstration.
+Submission Instructions
+Complete the assignment independently.
+Use Java 17 and Kafka Streams 4.1.0.
+Do not manually publish messages to the output topic.
+All processed messages must be generated by your Java application.
+Demonstrate the complete project on AWS EC2.
+
+Deadline: As instructed by the trainer.
