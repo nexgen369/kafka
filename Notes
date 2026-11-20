@@ -6620,7 +6620,928 @@ kafka-learning/
 
 Important technical note: The practical uses the File Connector's demonstration plugins. Confirm that the plugin JAR exists and that `plugin.path` points to its directory before starting the worker. Use a fresh topic and offset file for the initial demonstration to avoid confusion from previously processed records.
 
+----------------------------------------------------------------------------------------------------------------------------------------------
+DAY:8
 
+DAY 8 – KAFKA MONITORING, SECURITY, PERFORMANCE TUNING AND TROUBLESHOOTING
+
+PART 1 – AWS EC2 ENVIRONMENT PREPARATION
+
+Before starting the practical labs, connect to your AWS EC2 instance using SSH.
+
+Step 1: Connect to EC2
+
+ssh -i your-key.pem ubuntu@YOUR_EC2_PUBLIC_IP
+
+Step 2: Check Docker installation
+
+sudo docker --version
+
+Step 3: Check running containers
+
+sudo docker ps -a
+
+Expected result:
+
+You should see a container named kafka-day1.
+
+If the container is stopped, start it:
+
+sudo docker start kafka-day1
+
+Verify again:
+
+sudo docker ps
+
+Expected result:
+
+kafka-day1 should show Up.
+
+PART 2 – HANDS-ON LABS ON AWS EC2
+
+LAB 1 – VERIFY KAFKA AND INSPECT SECURITY CONFIGURATION
+
+Duration: 15 minutes
+
+Objective:
+
+Verify Kafka broker status, inspect existing topics, and understand Kafka security configuration.
+
+Step 1: Check Docker container status
+
+Command:
+
+sudo docker ps
+
+Expected result:
+
+The kafka-day1 container should be running.
+
+If it is stopped:
+
+sudo docker start kafka-day1
+
+Step 2: List Kafka topics
+
+Command:
+
+sudo docker exec kafka-day1 
+/opt/kafka/bin/kafka-topics.sh 
+--bootstrap-server localhost:9092 
+--list
+
+Expected result:
+
+You should see previously created topics.
+
+Example:
+
+day7-file-orders
+
+Note: The output depends on the topics available in your Kafka environment.
+
+Step 3: Inspect Kafka security environment variables
+
+Command:
+
+sudo docker exec kafka-day1 
+sh -c 'env | grep -E "KAFKA_.*(LISTENER|SASL|SSL|AUTHORIZER)"'
+
+Explanation:
+
+This command checks whether Kafka security-related environment variables are configured.
+
+It may display listener, SASL, SSL, or authorization settings.
+
+Important:
+
+If there is no output, it does not necessarily mean Kafka has no security configuration. The settings may be configured through Kafka property files or defaults.
+
+Step 4: Understand Kafka security
+
+Current training environment:
+
+Producer → PLAINTEXT → Kafka Broker
+
+Secured production environment:
+
+Producer → SASL_SSL → Kafka Broker
+                       |
+                       v
+                 Authentication
+                       |
+                       v
+                   ACL Checks
+
+Explanation:
+
+PLAINTEXT – Communication without encryption.
+
+SSL – Encrypts communication between Kafka clients and brokers.
+
+SASL – Provides client authentication.
+
+ACL – Controls which users can access Kafka resources and perform operations.
+
+Example secured Kafka client configuration:
+
+security.protocol=SASL_SSL
+sasl.mechanism=SCRAM-SHA-512
+sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="demo-user" password="<password>";
+ssl.truststore.location=/path/to/client.truststore.jks
+ssl.truststore.password=<truststore-password>
+
+Note:
+
+This is an example configuration only. It will not connect to the existing PLAINTEXT training broker. A separately configured secured broker and valid credentials are required.
+
+Do not modify the working Kafka broker during this demonstration.
+
+LAB 2 – KAFKA BROKER MONITORING
+
+Duration: 20 minutes
+
+Objective:
+
+Monitor Kafka container health, CPU utilization, memory consumption, and broker logs.
+
+Step 1: Check Kafka container health
+
+Command:
+
+sudo docker ps --filter name=kafka-day1
+
+Explanation:
+
+This command displays the status of the Kafka container.
+
+Check whether the container is running.
+
+Step 2: Monitor Docker resource consumption
+
+Command:
+
+sudo docker stats --no-stream kafka-day1
+
+Expected output:
+
+You will see CPU, memory, network, and storage statistics.
+
+Understand the metrics:
+
+CPU % – CPU utilization of the Kafka container.
+
+MEM USAGE – Memory consumed by the container.
+
+NET I/O – Network data received and transmitted.
+
+BLOCK I/O – Storage read and write activity.
+
+PIDS – Number of processes and threads reported by Docker.
+
+Step 3: Check recent Kafka logs
+
+Command:
+
+sudo docker logs --tail 50 kafka-day1
+
+Explanation:
+
+Displays the last 50 lines of Kafka container logs.
+
+Step 4: Identify Kafka errors
+
+Command:
+
+sudo docker logs kafka-day1 2>&1 | grep -Ei 'ERROR|FATAL|Exception' | tail -20
+
+Explanation:
+
+ERROR – Application or broker error.
+
+FATAL – Critical error.
+
+Exception – Java or application exception information.
+
+Important:
+
+An error in historical logs does not necessarily mean Kafka is currently unhealthy. Always verify the current broker status.
+
+Step 5: Describe Kafka topic details
+
+Command:
+
+sudo docker exec kafka-day1 
+/opt/kafka/bin/kafka-topics.sh 
+--bootstrap-server localhost:9092 
+--describe 
+--topic day7-file-orders
+
+Understand the output:
+
+Topic – Name of the Kafka topic.
+
+Partition – Number of partitions.
+
+Leader – Broker responsible for handling reads and writes for that partition.
+
+Replicas – Brokers storing copies of the partition.
+
+ISR – In-Sync Replicas that are sufficiently caught up with the leader.
+
+Production discussion:
+
+In a single-broker training environment, replication factor 1 is expected.
+
+In production, replication factor 3 is commonly used when at least three suitable brokers are available.
+
+LAB 3 – KAFKA CONSUMER LAG MONITORING
+
+Duration: 25 minutes
+
+Objective:
+
+Understand consumer lag and monitor how far a consumer group is behind Kafka producers.
+
+What is Consumer Lag?
+
+Consumer lag is the difference between the latest available offset and the consumer group's committed offset for a partition.
+
+Formula:
+
+Consumer Lag = Log End Offset - Committed Offset
+
+Example:
+
+Log End Offset: 100
+Committed Offset: 100
+Consumer Lag: 0
+
+Log End Offset: 150
+Committed Offset: 100
+Consumer Lag: 50
+
+Log End Offset: 200
+Committed Offset: 120
+Consumer Lag: 80
+
+Explanation:
+
+Lag 0 means the consumer group has caught up with the partition's current end offset.
+
+Lag 50 means the consumer group is 50 records behind.
+
+Note: Consumer lag measures records behind, not the number of seconds behind.
+
+Step 1: Create a monitoring topic
+
+Command:
+
+sudo docker exec kafka-day1 
+/opt/kafka/bin/kafka-topics.sh 
+--bootstrap-server localhost:9092 
+--create 
+--if-not-exists 
+--topic day8-monitoring 
+--partitions 1 
+--replication-factor 1
+
+Explanation:
+
+Creates a Kafka topic named day8-monitoring with one partition.
+
+Step 2: Produce 20 messages
+
+Command:
+
+seq 1 20 | sed 's/^/Order-/' | 
+sudo docker exec -i kafka-day1 
+/opt/kafka/bin/kafka-console-producer.sh 
+--bootstrap-server localhost:9092 
+--topic day8-monitoring
+
+Expected messages:
+
+Order-1
+Order-2
+Order-3
+Order-4
+...
+Order-20
+
+Explanation:
+
+We are generating 20 sample order messages and publishing them to Kafka.
+
+Step 3: Check the latest topic offset
+
+Command:
+
+sudo docker exec kafka-day1 
+/opt/kafka/bin/kafka-get-offsets.sh 
+--bootstrap-server localhost:9092 
+--topic day8-monitoring 
+--time -1
+
+Expected output for a newly created empty topic receiving exactly 20 messages:
+
+day8-monitoring:0:20
+
+Explanation:
+
+day8-monitoring – Topic name.
+
+0 – Partition number.
+
+20 – Latest log end offset.
+
+Step 4: Start a consumer group
+
+Command:
+
+sudo docker exec -it kafka-day1 
+/opt/kafka/bin/kafka-console-consumer.sh 
+--bootstrap-server localhost:9092 
+--topic day8-monitoring 
+--group day8-monitor-group 
+--from-beginning 
+--max-messages 5
+
+Expected output:
+
+Order-1
+Order-2
+Order-3
+Order-4
+Order-5
+
+Explanation:
+
+The consumer group reads five messages and exits.
+
+Step 5: Monitor consumer lag
+
+Command:
+
+sudo docker exec kafka-day1 
+/opt/kafka/bin/kafka-consumer-groups.sh 
+--bootstrap-server localhost:9092 
+--describe 
+--group day8-monitor-group
+
+Expected output after the five messages have been consumed and offsets committed:
+
+TOPIC             PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG
+day8-monitoring   0          5               20              15
+
+Explanation:
+
+CURRENT-OFFSET – Consumer group's committed position.
+
+LOG-END-OFFSET – Latest offset available in Kafka.
+
+LAG – Difference between the two offsets.
+
+Important:
+
+If offsets have not yet been committed, the output may differ. Wait briefly and check again.
+
+Step 6: Consume the remaining 15 messages
+
+Command:
+
+sudo docker exec -it kafka-day1 
+/opt/kafka/bin/kafka-console-consumer.sh 
+--bootstrap-server localhost:9092 
+--topic day8-monitoring 
+--group day8-monitor-group 
+--max-messages 15
+
+Explanation:
+
+The consumer group reads the remaining messages.
+
+Step 7: Check consumer lag again
+
+Command:
+
+sudo docker exec kafka-day1 
+/opt/kafka/bin/kafka-consumer-groups.sh 
+--bootstrap-server localhost:9092 
+--describe 
+--group day8-monitor-group
+
+Expected result after successful commits:
+
+CURRENT-OFFSET: 20
+LOG-END-OFFSET: 20
+LAG: 0
+
+Classroom explanation:
+
+When producers generate messages faster than consumers process them, consumer lag increases.
+
+When consumers process messages successfully and catch up, consumer lag decreases.
+
+PART 3 – PERFORMANCE TUNING AND PRODUCTION TROUBLESHOOTING
+
+LAB 4 – KAFKA PRODUCER PERFORMANCE TESTING
+
+Duration: 20 minutes
+
+Objective:
+
+Measure Kafka producer throughput and understand performance-related configurations.
+
+Kafka provides a built-in performance testing utility.
+
+Step 1: Create a performance testing topic
+
+Command:
+
+sudo docker exec kafka-day1 
+/opt/kafka/bin/kafka-topics.sh 
+--bootstrap-server localhost:9092 
+--create 
+--if-not-exists 
+--topic day8-performance 
+--partitions 3 
+--replication-factor 1
+
+Explanation:
+
+Creates a topic with three partitions.
+
+Step 2: Publish 10,000 messages
+
+Command:
+
+sudo docker exec kafka-day1 
+/opt/kafka/bin/kafka-producer-perf-test.sh 
+--topic day8-performance 
+--num-records 10000 
+--record-size 100 
+--throughput -1 
+--producer-props bootstrap.servers=localhost:9092 acks=all
+
+Explanation:
+
+num-records 10000 – Sends 10,000 records.
+
+record-size 100 – Each record has a payload of 100 bytes.
+
+throughput -1 – No configured rate limit.
+
+acks=all – Waits for the acknowledgment required by the in-sync replica configuration.
+
+Expected output:
+
+10000 records sent
+
+The output also includes:
+
+Records per second.
+
+MB per second.
+
+Average latency.
+
+Maximum latency.
+
+Note:
+
+Actual results depend on EC2 CPU, memory, disk, Docker configuration, and broker workload.
+
+Step 3: Understand producer performance settings
+
+batch.size
+
+Controls the target batch size for each partition.
+
+linger.ms
+
+Controls how long the producer may wait to accumulate records into a batch.
+
+compression.type
+
+Compresses records to reduce network and storage usage.
+
+acks
+
+Defines the acknowledgment requirement for producer requests.
+
+buffer.memory
+
+Defines the memory available for buffering records before sending.
+
+max.in.flight.requests.per.connection
+
+Controls the maximum number of unacknowledged requests allowed per connection.
+
+Step 4: Production discussion
+
+Scenario:
+
+An e-commerce application publishes 50,000 order events per second.
+
+Ask students:
+
+1. Should we increase the partition count?
+2. Can compression reduce network usage?
+3. Can batching improve producer throughput?
+4. How do we measure producer latency?
+5. What happens when consumers cannot process messages fast enough?
+
+Explanation:
+
+Increasing partitions can improve parallel processing.
+
+However, performance also depends on broker capacity, consumer concurrency, key distribution, and workload.
+
+Changing the partition count can also affect ordering for keyed records.
+
+LAB 5 – KAFKA CONSUMER PERFORMANCE TESTING
+
+Duration: 15 minutes
+
+Objective:
+
+Measure consumer throughput and understand how quickly Kafka consumers can read records.
+
+Step 1: Run consumer performance testing
+
+Command:
+
+sudo docker exec kafka-day1 
+/opt/kafka/bin/kafka-consumer-perf-test.sh 
+--bootstrap-server localhost:9092 
+--topic day8-performance 
+--messages 10000 
+--group day8-perf-group 
+--show-detailed-stats
+
+Explanation:
+
+This command reads records from the day8-performance topic.
+
+messages 10000 – Reads up to 10,000 messages.
+
+group day8-perf-group – Uses a separate consumer group.
+
+show-detailed-stats – Displays detailed consumption statistics.
+
+Expected output:
+
+The tool displays information about message consumption, throughput, and performance.
+
+Important:
+
+This is a basic training benchmark, not a reliable production capacity test.
+
+Production testing should include representative message sizes, actual application processing, replication, security, and concurrent workloads.
+
+PART 4 – IMPORTANT KAFKA MONITORING METRICS
+
+Understand the following metrics used by DevOps and SRE engineers.
+
+1. Consumer Lag
+
+Shows how far a consumer group is behind the latest available records.
+
+2. Under-Replicated Partitions
+
+Shows partitions with fewer in-sync replicas than their configured replication factor.
+
+3. Offline Partitions
+
+Shows partitions that do not have an available leader.
+
+4. Request Latency
+
+Measures how long Kafka takes to process requests.
+
+5. Bytes In / Bytes Out
+
+Measures incoming and outgoing data throughput.
+
+6. CPU Utilization
+
+Shows the amount of CPU consumed by Kafka.
+
+7. Disk Utilization
+
+Shows disk capacity usage and storage I/O pressure.
+
+8. JVM Heap and Garbage Collection
+
+Helps identify memory pressure and Java garbage collection behavior.
+
+Production monitoring tools:
+
+Prometheus – Collects and stores monitoring metrics.
+
+Grafana – Creates dashboards and visualizes metrics.
+
+Kafka JMX Metrics – Exposes Kafka broker and JVM performance information.
+
+CloudWatch – Monitors AWS infrastructure and supported application metrics.
+
+Note:
+
+Our current Docker lab demonstrates Kafka CLI monitoring and Docker resource monitoring without installing a complete monitoring stack.
+
+PART 5 – KAFKA PRODUCTION TROUBLESHOOTING SCENARIOS
+
+SCENARIO 1 – CONSUMER LAG KEEPS INCREASING
+
+Symptoms:
+
+Producers are publishing messages successfully, but consumers are falling behind.
+
+Investigation:
+
+Step 1: Check consumer group status.
+
+sudo docker exec kafka-day1 
+/opt/kafka/bin/kafka-consumer-groups.sh 
+--bootstrap-server localhost:9092 
+--describe 
+--group day8-monitor-group
+
+Step 2: Check consumer application health.
+
+Step 3: Check CPU and memory utilization.
+
+sudo docker stats --no-stream kafka-day1
+
+Step 4: Check partition distribution across consumers.
+
+Step 5: Measure message processing time.
+
+Possible solutions:
+
+Optimize consumer application code.
+
+Improve slow database or API dependencies.
+
+Increase consumer instances when partition concurrency permits.
+
+Review partition count and workload distribution.
+
+SCENARIO 2 – KAFKA BROKER BECOMES UNAVAILABLE
+
+Symptoms:
+
+Producers cannot connect to Kafka or receive timeout errors.
+
+Investigation:
+
+Step 1: Check Docker container status.
+
+sudo docker ps -a
+
+Step 2: Check recent Kafka logs.
+
+sudo docker logs --tail 100 kafka-day1
+
+Step 3: Check container resource utilization.
+
+sudo docker stats --no-stream kafka-day1
+
+Step 4: Verify network connectivity and broker listener configuration.
+
+Step 5: Check disk capacity on EC2.
+
+df -h
+
+Possible causes:
+
+Kafka container stopped.
+
+Insufficient disk space.
+
+Network connectivity issues.
+
+Incorrect listener configuration.
+
+Broker process failure.
+
+Important:
+
+Do not immediately restart production brokers without understanding replication health and the impact on availability.
+
+SCENARIO 3 – PRODUCER MESSAGES ARE DELAYED
+
+Symptoms:
+
+Messages take longer than expected to reach Kafka.
+
+Possible causes:
+
+Network latency.
+
+Overloaded Kafka brokers.
+
+Excessive batching delay.
+
+Unavailable partition leaders.
+
+Slow disk operations.
+
+Investigation:
+
+Check producer latency.
+
+Check broker request metrics.
+
+Check Kafka logs.
+
+Check network and storage performance.
+
+Possible solutions:
+
+Tune batching configuration.
+
+Review compression settings.
+
+Investigate broker resource utilization.
+
+Fix network or storage bottlenecks.
+
+SCENARIO 4 – DUPLICATE MESSAGES
+
+Symptoms:
+
+Consumers receive the same business event more than once.
+
+Possible causes:
+
+Producer retries.
+
+Consumer crashes before committing offsets.
+
+Application processing succeeds but offset commit fails.
+
+Connector recovery or application-level replay.
+
+Explanation:
+
+At-least-once delivery means a record may be processed more than once after certain failures.
+
+Possible solutions:
+
+Implement idempotent processing.
+
+Use appropriate Kafka transactions where required.
+
+Make database operations idempotent.
+
+Review consumer offset commit strategy.
+
+PART 6 – DAY 8 STUDENT ASSIGNMENT
+
+Kafka Monitoring and Performance Assessment
+
+Total Marks: 30
+
+Task 1 – Create a Kafka topic with three partitions.
+
+Marks: 5
+
+Task 2 – Produce 20 test messages.
+
+Marks: 5
+
+Task 3 – Create a consumer group and demonstrate consumer lag.
+
+Marks: 5
+
+Task 4 – Run producer performance testing with 10,000 records.
+
+Marks: 5
+
+Task 5 – Capture Docker CPU and memory metrics.
+
+Marks: 5
+
+Task 6 – Explain how to troubleshoot increasing consumer lag.
+
+Marks: 5
+
+Student submission requirements:
+
+1. Capture screenshots of each completed task.
+2. Include the commands executed.
+3. Include expected and actual outputs.
+4. Explain consumer lag in your own words.
+5. Explain how you would troubleshoot a Kafka production issue.
+
+PART 7 – DAY 8 INTERVIEW QUESTIONS AND ANSWERS
+
+Q1. What is consumer lag?
+
+Answer:
+
+Consumer lag is the difference between the log end offset and the consumer group's committed offset for a partition.
+
+Q2. What is SASL in Kafka?
+
+Answer:
+
+SASL is a framework used to authenticate Kafka clients through mechanisms such as SCRAM and PLAIN.
+
+Q3. What is an ACL?
+
+Answer:
+
+An Access Control List defines permissions for Kafka resources, such as topics and consumer groups.
+
+Q4. What is an under-replicated partition?
+
+Answer:
+
+A partition whose in-sync replica count is below its configured replication factor.
+
+Q5. How do you monitor Kafka in production?
+
+Answer:
+
+Using Kafka JMX metrics, broker and client logs, Prometheus, Grafana, CloudWatch, and consumer group monitoring.
+
+Q6. Does increasing partitions always improve performance?
+
+Answer:
+
+No. Performance also depends on broker resources, consumer parallelism, message distribution, and workload.
+
+Q7. What does acks=all mean?
+
+Answer:
+
+The producer waits for acknowledgment from the partition leader after the record satisfies the broker's in-sync replica acknowledgment requirements.
+
+Q8. What is the difference between Kafka retention and consumer offsets?
+
+Answer:
+
+Retention controls how long Kafka stores records.
+
+Consumer offsets track the progress of a consumer group.
+
+PART 8 – DAY 8 LEARNING OUTCOMES
+
+By the end of Day 8, students should be able to:
+
+1. Verify Kafka broker health on AWS EC2.
+2. Inspect Kafka topics and configurations.
+3. Understand Kafka security mechanisms.
+4. Monitor Docker CPU and memory utilization.
+5. Inspect Kafka broker logs.
+6. Calculate and monitor consumer lag.
+7. Perform producer performance testing.
+8. Perform consumer performance testing.
+9. Understand important Kafka production metrics.
+10. Troubleshoot common Kafka production problems.
+
+FINAL PRACTICAL CHECKLIST
+
+[ ] Kafka container is running.
+
+[ ] Kafka topics are listed.
+
+[ ] Kafka security configuration is inspected.
+
+[ ] Docker resource consumption is monitored.
+
+[ ] Kafka logs are inspected.
+
+[ ] Consumer lag is demonstrated.
+
+[ ] Producer performance test is completed.
+
+[ ] Consumer performance test is completed.
+
+[ ] Production troubleshooting scenarios are understood.
+
+[ ] Student assignment is completed.
+
+DAY 9 – UPCOMING CAPSTONE PROJECT
+
+Tomorrow, students will combine the concepts learned throughout the Kafka training.
+
+The capstone project will include:
+
+1. Kafka Producer implementation.
+2. Kafka Consumer implementation.
+3. Kafka Topics and Partitions.
+4. Consumer Groups.
+5. Kafka Connect.
+6. Kafka Monitoring.
+7. Consumer Lag Monitoring.
+8. Performance Testing.
+9. Production Troubleshooting.
+
+End of Day 8 – Kafka Monitoring, Performance Tuning and Troubleshooting.
 
 
 
